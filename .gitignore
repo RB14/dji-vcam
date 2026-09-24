@@ -1,0 +1,18 @@
+# Python (Windows venv, see obs-dji.sh)
+.venv/
+__pycache__/
+
+# Local state: BLE pairing identifier, camera AP credentials
+.state/
+
+# Phone captures (may contain credentials)
+captures/
+
+# ESP-IDF build output and generated config
+firmware/*/build/
+firmware/*/managed_components/
+firmware/*/sdkconfig
+firmware/*/sdkconfig.old
+
+# Raw flash dumps
+firmware/backups/
