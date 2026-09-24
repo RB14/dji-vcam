@@ -3,6 +3,27 @@
 Living list, updated as work progresses. Status: `[ ]` to do, `[~]` in progress, `[x]` done.
 Milestones refer to [app-architecture.md](app-architecture.md).
 
+## Test plan for the next session with the camera
+
+Everything below was built or changed without the camera; run it in this order.
+
+1. **Media source update** (one UAC prompt): install the new `djivcam-source.dll` (lock fix,
+   heartbeat, BT.709 media type), e.g. run the new installer, or
+   `app/scripts/update-vcam-source.ps1 -SourceDll <build>\gui\RelWithDebInfo\djivcam-source.dll`
+   from an administrator PowerShell.
+2. **Installer**: install `binaries/dji-vcam-setup-0.1.0.exe`, start from the Start menu, check
+   the webcam works without the app's own install prompt, uninstall, check that DJI VCam is gone
+   from the camera list and `C:\ProgramData\DJI VCam` is removed.
+3. **Live view on main**: connect, watch *delay* / *loss* / *dup* in the status bar; if the lag
+   comes back, compare with `video/gapWaitMs` = 50.
+4. **Camera controls** (docs/camera-controls.md section 6, experiments 1-3):
+   `dji-vcam-cli --ble --identifier-file .state/ble_identifier --seconds 60 --camera --show-messages`,
+   change settings on the camera's touchscreen and watch the decoded state follow; then
+   `--camera-set Stabilization=3 --camera-set EV=18 ...` and the app's Camera settings panel.
+5. **Native Bluetooth** (`git switch ble-native`, rebuild): connect with one click as before
+   (pair, wake, credentials); Disconnect during "Searching" returns at once. Merge if it works.
+6. **Webcam consumers**: OBS (Video Capture Device), a browser (webrtc test page), Windows Camera.
+
 ## Now
 
 - [~] **Camera controls** (milestone 7): research in [camera-controls.md](camera-controls.md);
