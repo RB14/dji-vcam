@@ -90,9 +90,11 @@ void Link::send_frame(const duml::Frame& frame) {
     send(PacketType::Command, body);
 }
 
-void Link::send_duml(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id, Bytes payload,
-                     std::uint8_t flags) {
-    send_frame(duml::Frame{duml::kAddrApp, receiver, duml_seq_++, flags, cmd_set, cmd_id, std::move(payload)});
+std::uint16_t Link::send_duml(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id, Bytes payload,
+                              std::uint8_t flags) {
+    const std::uint16_t seq = duml_seq_++;
+    send_frame(duml::Frame{duml::kAddrApp, receiver, seq, flags, cmd_set, cmd_id, std::move(payload)});
+    return seq;
 }
 
 void Link::send_ack() {

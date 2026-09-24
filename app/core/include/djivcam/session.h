@@ -1,5 +1,6 @@
 // Live-view session: keeps a datalink to the camera open and streams its video, reconnecting
-// whenever the camera or the network link goes away.
+// whenever the camera or the network link goes away. While streaming it also carries the app's
+// own DUML requests to the camera (camera settings) and hands the camera's status pushes over.
 //
 // State machine (runs on its own thread):
 //   WaitingForRoute -> Connecting (TCP poke, UDP handshake, settle, register, trigger)
@@ -12,10 +13,15 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
 #include <thread>
+#include <vector>
+
+#include "djivcam/duml.h"
+#include "djivcam/request_tracker.h"
 
 namespace djivcam {
 
@@ -59,24 +65,53 @@ public:
     using VideoCallback = std::function<void(std::span<const std::uint8_t>)>;
     // Called on the session thread on every state change, with a human-readable detail.
     using StateCallback = std::function<void(SessionState, const std::string&)>;
+    // Called on the session thread with every DUML message from the camera that does not answer a
+    // request(): status pushes, and the camera's own requests (already answered by the session).
+    using MessageCallback = std::function<void(const duml::Frame&)>;
+    using ReplyCallback = RequestTracker::ReplyCallback;
 
     LiveViewSession(SessionConfig config, VideoCallback on_video, StateCallback on_state);
     ~LiveViewSession();
     LiveViewSession(const LiveViewSession&) = delete;
     LiveViewSession& operator=(const LiveViewSession&) = delete;
 
+    // Set before start().
+    void set_message_callback(MessageCallback callback) { on_message_ = std::move(callback); }
+
     void start();
     void stop();
     SessionState state() const { return state_; }
     SessionStats stats() const;
 
+    // Sends a DUML request to the camera (thread-safe). `on_reply` gets the reply on the session
+    // thread, or nullopt after `timeout` or when the link goes down; right away, on the calling
+    // thread, if the session is not streaming.
+    void request(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id, duml::Bytes payload,
+                 ReplyCallback on_reply, std::chrono::milliseconds timeout = std::chrono::milliseconds(1500),
+                 std::uint8_t flags = duml::kFlagRequest);
+
 private:
+    struct Outgoing {
+        std::uint8_t receiver;
+        std::uint8_t cmd_set;
+        std::uint8_t cmd_id;
+        duml::Bytes payload;
+        std::uint8_t flags;
+        ReplyCallback on_reply;
+        std::chrono::milliseconds timeout;
+    };
+
     void run(std::stop_token stop);
     void set_state(SessionState state, const std::string& detail);
+    // Fails the requests queued by request() but not sent yet.
+    void fail_outgoing();
 
     SessionConfig config_;
     VideoCallback on_video_;
     StateCallback on_state_;
+    MessageCallback on_message_;
+    std::mutex outgoing_mutex_;
+    std::vector<Outgoing> outgoing_;
     std::atomic<SessionState> state_{SessionState::Stopped};
     std::atomic<std::uint64_t> datagrams_{0};
     std::atomic<std::uint64_t> video_datagrams_{0};

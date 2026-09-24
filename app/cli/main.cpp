@@ -7,11 +7,16 @@
 //   --ble              wake the camera's Wi-Fi over Bluetooth first and keep the BLE link alive
 //   --identifier-file  file holding the approved pairing identifier (never printed)
 //   --dump             write the received H.264 stream to PATH
+//   --send R,S,I[,HEX] once streaming, send a DUML request (receiver, command set, command id and
+//                      payload in hex, e.g. 01,02,8e,0100) and print the reply; repeatable
+//   --show-messages    print every DUML message the camera sends (status pushes)
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <exception>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -160,6 +165,55 @@ int run_decode_bench(const std::string& path, djivcam::media::DecoderPreference 
 }  // namespace
 #endif
 
+namespace {
+
+// A DUML request given as "receiver,cmd_set,cmd_id[,payload]", all in hex.
+struct SendSpec {
+    std::uint8_t receiver = 0;
+    std::uint8_t cmd_set = 0;
+    std::uint8_t cmd_id = 0;
+    djivcam::duml::Bytes payload;
+};
+
+std::optional<SendSpec> parse_send(const std::string& text) {
+    std::vector<std::string> fields(1);
+    for (char c : text) {
+        if (c == ',') {
+            fields.emplace_back();
+        } else {
+            fields.back() += c;
+        }
+    }
+    if (fields.size() < 3 || fields.size() > 4) {
+        return std::nullopt;
+    }
+    try {
+        SendSpec spec{static_cast<std::uint8_t>(std::stoul(fields[0], nullptr, 16)),
+                      static_cast<std::uint8_t>(std::stoul(fields[1], nullptr, 16)),
+                      static_cast<std::uint8_t>(std::stoul(fields[2], nullptr, 16)),
+                      {}};
+        if (fields.size() == 4) {
+            const std::string& hex = fields[3];
+            if (hex.size() % 2 != 0) {
+                return std::nullopt;
+            }
+            for (std::size_t i = 0; i < hex.size(); i += 2) {
+                spec.payload.push_back(static_cast<std::uint8_t>(std::stoul(hex.substr(i, 2), nullptr, 16)));
+            }
+        }
+        return spec;
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+// Replies to the session's own keep-alive traffic (heartbeat, registration, live-view trigger).
+bool is_session_housekeeping(const djivcam::duml::Frame& frame) {
+    return frame.cmd_set == 0x00 && (frame.cmd_id == 0x4F || frame.cmd_id == 0x81 || frame.cmd_id == 0x82 || frame.cmd_id == 0x88);
+}
+
+}  // namespace
+
 int main(int argc, char* argv[]) {
     int seconds = 20;
     bool use_ble = false;
@@ -168,6 +222,8 @@ int main(int argc, char* argv[]) {
     std::string decoder_choice = "auto";
     std::string identifier_file;
     std::string dump_path;
+    std::vector<SendSpec> sends;
+    bool show_messages = false;
     for (int i = 1; i < argc; ++i) {
         const std::string flag = argv[i];
         const bool has_value = i + 1 < argc;
@@ -185,6 +241,15 @@ int main(int argc, char* argv[]) {
             identifier_file = argv[++i];
         } else if (flag == "--dump" && has_value) {
             dump_path = argv[++i];
+        } else if (flag == "--send" && has_value) {
+            const auto spec = parse_send(argv[++i]);
+            if (!spec) {
+                std::fprintf(stderr, "bad --send value: %s (expected e.g. 01,02,8e,0100)\n", argv[i]);
+                return 2;
+            }
+            sends.push_back(*spec);
+        } else if (flag == "--show-messages") {
+            show_messages = true;
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", flag.c_str());
             return 2;
@@ -274,10 +339,31 @@ int main(int argc, char* argv[]) {
         [](djivcam::SessionState state, const std::string& detail) {
             say(std::string("state: ") + djivcam::to_string(state) + (detail.empty() ? "" : " - " + detail));
         });
+    if (show_messages) {
+        session.set_message_callback([](const djivcam::duml::Frame& frame) {
+            if (!is_session_housekeeping(frame)) {
+                say("camera: " + frame.describe());
+            }
+        });
+    }
     session.start();
     djivcam::SessionStats previous{};
+    bool sent = false;
     for (int second = 0; second < seconds; ++second) {
         std::this_thread::sleep_for(1s);
+        if (!sent && session.state() == djivcam::SessionState::Streaming) {
+            sent = true;
+            for (const SendSpec& spec : sends) {
+                const std::string what = djivcam::duml::Frame{djivcam::duml::kAddrApp, spec.receiver, 0, djivcam::duml::kFlagRequest,
+                                                              spec.cmd_set, spec.cmd_id, spec.payload}
+                                             .describe();
+                session.request(spec.receiver, spec.cmd_set, spec.cmd_id, spec.payload,
+                                [what](std::optional<djivcam::duml::Frame> reply) {
+                                    say("sent " + what + " -> " + (reply ? reply->describe() : std::string("no reply")));
+                                });
+                std::this_thread::sleep_for(300ms);
+            }
+        }
         const auto stats = session.stats();
         char line[200];
         std::snprintf(line, sizeof(line),

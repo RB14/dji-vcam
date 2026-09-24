@@ -65,12 +65,13 @@ public:
     void settle(int rounds = 5);
 
     void send_frame(const duml::Frame& frame);
-    void send_duml(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id, Bytes payload,
-                   std::uint8_t flags = duml::kFlagRequest);
+    // Returns the DUML sequence number used (the camera echoes it in its reply).
+    std::uint16_t send_duml(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id, Bytes payload,
+                            std::uint8_t flags = duml::kFlagRequest);
     // Window ACK: [start][end][u32 0] for video, download and control, plus u16 0. Seq 0.
     void send_ack();
-    // Video position to acknowledge: the last contiguous datagram received. Acknowledging only
-    // contiguous data tells the camera about gaps so it can re-send them.
+    // Video position to acknowledge (VideoReassembler::ack_seq): the newest datagram, or the last
+    // contiguous one while waiting for the camera to re-send a gap.
     void set_video_ack(std::optional<std::uint16_t> seq) { video_ack_ = seq; }
 
     // Receives one datagram, waiting up to `timeout`.

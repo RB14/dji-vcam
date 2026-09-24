@@ -53,14 +53,20 @@ void send_heartbeat(datalink::Link& link, std::uint8_t counter) {
     link.send_duml(duml::kAddrDm368Second, 0x00, 0x4F, Bytes{0x01, 0x00, counter, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF});
 }
 
-// Every request from the camera must be answered or it drops the session.
-void answer_requests(datalink::Link& link, const datalink::Datagram& datagram) {
+// Every request from the camera must be answered or it drops the session. Replies to the app's
+// requests go to their callbacks; everything else is reported through `on_message`.
+void handle_messages(datalink::Link& link, const datalink::Datagram& datagram, RequestTracker& tracker,
+                     const LiveViewSession::MessageCallback& on_message) {
     for (const duml::Frame& frame : link.duml_frames(datagram)) {
-        if (!frame.is_request()) {
+        if (frame.is_request()) {
+            const bool device_info = frame.cmd_set == 0x00 && frame.cmd_id == 0x81;
+            link.send_frame(frame.reply(device_info ? app_device_info() : frame.payload));
+        } else if (tracker.resolve(frame)) {
             continue;
         }
-        const bool device_info = frame.cmd_set == 0x00 && frame.cmd_id == 0x81;
-        link.send_frame(frame.reply(device_info ? app_device_info() : frame.payload));
+        if (on_message) {
+            on_message(frame);
+        }
     }
 }
 
@@ -92,7 +98,33 @@ void LiveViewSession::stop() {
         thread_.request_stop();
         thread_.join();
     }
+    fail_outgoing();
     set_state(SessionState::Stopped, "");
+}
+
+void LiveViewSession::request(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id, duml::Bytes payload,
+                              ReplyCallback on_reply, std::chrono::milliseconds timeout, std::uint8_t flags) {
+    if (state_ != SessionState::Streaming) {
+        if (on_reply) {
+            on_reply(std::nullopt);
+        }
+        return;
+    }
+    std::lock_guard lock(outgoing_mutex_);
+    outgoing_.push_back({receiver, cmd_set, cmd_id, std::move(payload), flags, std::move(on_reply), timeout});
+}
+
+void LiveViewSession::fail_outgoing() {
+    std::vector<Outgoing> failed;
+    {
+        std::lock_guard lock(outgoing_mutex_);
+        failed.swap(outgoing_);
+    }
+    for (auto& request : failed) {
+        if (request.on_reply) {
+            request.on_reply(std::nullopt);
+        }
+    }
 }
 
 SessionStats LiveViewSession::stats() const {
@@ -151,6 +183,7 @@ void LiveViewSession::run(std::stop_token stop) {
         link.receive_all(300ms);
         link.send_ack();
         send_trigger(link);
+        fail_outgoing();  // queued in a race with the previous connection going down
         set_state(SessionState::Streaming, "");
 
         // 3. Stream until stopped or the camera goes silent.
@@ -179,7 +212,20 @@ void LiveViewSession::run(std::stop_token stop) {
         auto next_heartbeat = now;
         auto next_register = now + kRegisterInterval;
         auto next_trigger = now + kTriggerInterval;
+        RequestTracker tracker;
         while (!stop.stop_requested()) {
+            std::vector<Outgoing> batch;
+            {
+                std::lock_guard lock(outgoing_mutex_);
+                batch.swap(outgoing_);
+            }
+            for (auto& request : batch) {
+                const std::uint16_t seq =
+                    link.send_duml(request.receiver, request.cmd_set, request.cmd_id, std::move(request.payload), request.flags);
+                tracker.add(duml::Frame{duml::kAddrApp, request.receiver, seq, request.flags, request.cmd_set, request.cmd_id, {}},
+                            std::move(request.on_reply), Clock::now() + request.timeout);
+            }
+
             if (auto datagram = link.receive(10ms)) {
                 last_packet = Clock::now();
                 ++datagrams_;
@@ -187,11 +233,12 @@ void LiveViewSession::run(std::stop_token stop) {
                     last_video = last_packet;
                     reassembler.push(datagram->seq, datagram->payload(), last_packet);
                 } else {
-                    answer_requests(link, *datagram);
+                    handle_messages(link, *datagram, tracker, on_message_);
                 }
             }
 
             now = Clock::now();
+            tracker.expire(now);
             reassembler.poll(now);
             const auto& video_stats = reassembler.stats();
             lost_ = lost_base + video_stats.skipped;
@@ -226,6 +273,8 @@ void LiveViewSession::run(std::stop_token stop) {
                 next_trigger = now + kTriggerInterval;
             }
         }
+        tracker.fail_all();  // the link is going down: nobody will answer
+        fail_outgoing();
     }
 }
 

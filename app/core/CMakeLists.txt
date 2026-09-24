@@ -4,6 +4,7 @@ add_library(djivcam_core STATIC
     src/h264.cpp
     src/net.cpp
     src/reassembler.cpp
+    src/request_tracker.cpp
     src/session.cpp
 )
 target_include_directories(djivcam_core PUBLIC include)

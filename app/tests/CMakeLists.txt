@@ -11,6 +11,7 @@ add_executable(djivcam_tests
     duml_test.cpp
     h264_test.cpp
     reassembler_test.cpp
+    request_tracker_test.cpp
 )
 target_link_libraries(djivcam_tests PRIVATE djivcam_core GTest::gtest_main)
 

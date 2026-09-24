@@ -98,6 +98,19 @@ The version comes from `project(dji-vcam VERSION ...)` in `app/CMakeLists.txt`.
   possible and prints the cost of each per-frame step; the live view needs under 33 ms per frame.
   On the development laptop (Intel iGPU) a real recording takes about 7 ms (D3D11VA or CPU).
 
+### Experimenting with camera commands
+
+With the camera connected, the CLI can send any DUML request over the live datalink and show the
+camera's status pushes, which is how new camera controls are tried out before they go into the app:
+
+```bash
+dji-vcam-cli --seconds 30 --show-messages --send 01,02,8e,0100
+```
+
+`--send receiver,cmd_set,cmd_id[,payload]` (hex, repeatable) is sent once streaming starts and
+its reply printed; `--show-messages` prints every message the camera sends except the replies to
+the session's own keep-alives.
+
 ## Desktop app on Linux
 
 > Status: the core library and tests are built and tested on Linux (Ubuntu under WSL). The GUI,
