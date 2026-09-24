@@ -10,8 +10,15 @@
 //   --send R,S,I[,HEX] once streaming, send a DUML request (receiver, command set, command id and
 //                      payload in hex, e.g. 01,02,8e,0100) and print the reply; repeatable
 //   --show-messages    print every DUML message the camera sends (status pushes)
+//   --camera           follow the camera's settings and status (subscriptions) and print them
+//   --camera-set N=C   once streaming, change setting N (e.g. Stabilization, EV) to code C through
+//                      the camera controls, confirming on the camera's read-back; repeatable
+//   --camera-ip IP     the camera's address (default 192.168.2.1), e.g. 127.0.0.1 for
+//                      tools/fake_camera.py
 #include <algorithm>
 #include <atomic>
+#include <cctype>
+#include <memory>
 #include <chrono>
 #include <cstdio>
 #include <exception>
@@ -21,6 +28,7 @@
 #include <thread>
 #include <vector>
 
+#include "djivcam/camera_controller.h"
 #include "djivcam/session.h"
 
 #ifdef DJIVCAM_HAVE_BLE
@@ -205,6 +213,61 @@ std::optional<SendSpec> parse_send(const std::string& text) {
     }
 }
 
+// One line with everything the camera has reported.
+std::string summarize(const djivcam::camera::CameraState& state) {
+    using djivcam::camera::Setting;
+    std::string out;
+    auto add = [&out](const std::string& part) { out += (out.empty() ? "" : " | ") + part; };
+    for (const auto& [setting, code] : state.values) {
+        add(std::string(djivcam::camera::name(setting)) + " " + djivcam::camera::describe(setting, code));
+    }
+    if (state.resolution && state.frame_rate) {
+        add(djivcam::camera::describe_format(*state.resolution, *state.frame_rate));
+    }
+    if (state.white_balance_kelvin) {
+        add(*state.white_balance_kelvin ? "WB " + std::to_string(*state.white_balance_kelvin) + " K" : "WB auto");
+    }
+    if (state.shutter_actual) {
+        add("shutter 1/" + std::to_string(*state.shutter_actual));
+    }
+    if (state.battery_percent) {
+        add("battery " + std::to_string(*state.battery_percent) + "%");
+    }
+    if (state.storage) {
+        add("free " + std::to_string(state.storage->free_mb) + " MB");
+    }
+    if (state.recording) {
+        add("REC " + std::to_string(state.record_seconds.value_or(0)) + " s");
+    }
+    if (!state.allowed_formats.empty()) {
+        add(std::to_string(state.allowed_formats.size()) + " formats allowed");
+    }
+    return out.empty() ? "(nothing reported yet)" : out;
+}
+
+// "Stabilization=3" -> (setting, code).
+std::optional<std::pair<djivcam::camera::Setting, int>> parse_camera_set(const std::string& text) {
+    const auto equals = text.find('=');
+    if (equals == std::string::npos) {
+        return std::nullopt;
+    }
+    std::string wanted = text.substr(0, equals);
+    std::transform(wanted.begin(), wanted.end(), wanted.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    for (int value = 0; value <= static_cast<int>(djivcam::camera::Setting::Codec); ++value) {
+        const auto setting = static_cast<djivcam::camera::Setting>(value);
+        std::string name(djivcam::camera::name(setting));
+        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (name == wanted) {
+            try {
+                return std::pair(setting, std::stoi(text.substr(equals + 1), nullptr, 0));
+            } catch (const std::exception&) {
+                return std::nullopt;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 // Replies to the session's own keep-alive traffic (heartbeat, registration, live-view trigger).
 bool is_session_housekeeping(const djivcam::duml::Frame& frame) {
     return frame.cmd_set == 0x00 && (frame.cmd_id == 0x4F || frame.cmd_id == 0x81 || frame.cmd_id == 0x82 || frame.cmd_id == 0x88);
@@ -222,6 +285,9 @@ int main(int argc, char* argv[]) {
     std::string dump_path;
     std::vector<SendSpec> sends;
     bool show_messages = false;
+    bool follow_camera = false;
+    std::vector<std::pair<djivcam::camera::Setting, int>> camera_sets;
+    std::string camera_ip;
     for (int i = 1; i < argc; ++i) {
         const std::string flag = argv[i];
         const bool has_value = i + 1 < argc;
@@ -248,6 +314,18 @@ int main(int argc, char* argv[]) {
             sends.push_back(*spec);
         } else if (flag == "--show-messages") {
             show_messages = true;
+        } else if (flag == "--camera") {
+            follow_camera = true;
+        } else if (flag == "--camera-set" && has_value) {
+            const auto change = parse_camera_set(argv[++i]);
+            if (!change) {
+                std::fprintf(stderr, "bad --camera-set value: %s (expected e.g. Stabilization=3)\n", argv[i]);
+                return 2;
+            }
+            camera_sets.push_back(*change);
+            follow_camera = true;
+        } else if (flag == "--camera-ip" && has_value) {
+            camera_ip = argv[++i];
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", flag.c_str());
             return 2;
@@ -276,6 +354,10 @@ int main(int argc, char* argv[]) {
     }
 
     djivcam::SessionConfig config;
+    if (!camera_ip.empty()) {
+        config.camera_ip = camera_ip;
+        config.camera_subnet_prefix = camera_ip.substr(0, camera_ip.rfind('.') + 1);
+    }
     if (!identifier_file.empty()) {
         std::ifstream in(identifier_file);
         std::getline(in, config.identifier);
@@ -323,6 +405,7 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
+    std::unique_ptr<djivcam::camera::CameraController> controls;  // before the session: its callbacks use it
     std::ofstream dump;
     if (!dump_path.empty()) {
         dump.open(dump_path, std::ios::binary);
@@ -334,16 +417,26 @@ int main(int argc, char* argv[]) {
                 dump.write(reinterpret_cast<const char*>(video.data()), static_cast<std::streamsize>(video.size()));
             }
         },
-        [](djivcam::SessionState state, const std::string& detail) {
+        [&controls](djivcam::SessionState state, const std::string& detail) {
             say(std::string("state: ") + djivcam::to_string(state) + (detail.empty() ? "" : " - " + detail));
-        });
-    if (show_messages) {
-        session.set_message_callback([](const djivcam::duml::Frame& frame) {
-            if (!is_session_housekeeping(frame)) {
-                say("camera: " + frame.describe());
+            if (state == djivcam::SessionState::Streaming && controls) {
+                controls->on_streaming();
             }
         });
+    std::atomic<bool> camera_changed{false};
+    if (follow_camera) {
+        controls = std::make_unique<djivcam::camera::CameraController>(
+            session, [&camera_changed] { camera_changed = true; },
+            [](const std::string& error) { say("camera error: " + error); });
     }
+    session.set_message_callback([&controls, show_messages](const djivcam::duml::Frame& frame) {
+        if (show_messages && !is_session_housekeeping(frame)) {
+            say("camera: " + frame.describe());
+        }
+        if (controls) {
+            controls->on_message(frame);
+        }
+    });
     session.start();
     djivcam::SessionStats previous{};
     bool sent = false;
@@ -361,6 +454,13 @@ int main(int argc, char* argv[]) {
                                 });
                 std::this_thread::sleep_for(300ms);
             }
+            for (const auto& [setting, code] : camera_sets) {
+                say("camera: set " + std::string(djivcam::camera::name(setting)) + " to " + djivcam::camera::describe(setting, code));
+                controls->set(setting, code);
+            }
+        }
+        if (controls && camera_changed.exchange(false)) {
+            say("camera: " + summarize(controls->state()));
         }
         const auto stats = session.stats();
         char line[200];

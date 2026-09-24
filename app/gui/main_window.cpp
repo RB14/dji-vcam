@@ -3,6 +3,8 @@
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
+#include <QDockWidget>
+#include <QScrollArea>
 #include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
@@ -24,6 +26,7 @@
 #include <chrono>
 
 #include "bridge_link.h"
+#include "camera_panel.h"
 #include "djivcam/camera_ble.h"
 #include "pipeline.h"
 #include "preview_widget.h"
@@ -46,6 +49,9 @@ const QString kDecoderKey = QStringLiteral("video/decoder");
 const QString kVirtualCameraKey = QStringLiteral("vcam/enabled");
 // Advanced, no UI: how long to wait for a missing video datagram before skipping it (ms, 0 = never).
 const QString kGapWaitKey = QStringLiteral("video/gapWaitMs");
+// Advanced, no UI: the camera's address (its own access point: 192.168.2.1; 127.0.0.1 for
+// tools/fake_camera.py).
+const QString kCameraIpKey = QStringLiteral("connect/cameraIp");
 const QString kPairingToken = QStringLiteral("obsd");  // shown on the camera's approval prompt
 constexpr qint64 kRewakeAfterMs = 20000;                // camera network gone this long: wake again
 
@@ -65,6 +71,7 @@ MainWindow::MainWindow(QWidget* parent)
       pipeline_(new Pipeline(this)),
       connector_(new CameraConnector(this)),
       preview_(new PreviewWidget(this)),
+      camera_panel_(new CameraPanel(this)),
       connect_action_(new QAction(tr("Connect"), this)),
       decoder_choice_(new QComboBox(this)),
       camera_label_(new QLabel(this)),
@@ -76,7 +83,17 @@ MainWindow::MainWindow(QWidget* parent)
     vcam_label_ = new QLabel(this);
     setWindowTitle(tr("DJI VCam - DJI Osmo Action live view"));
     setCentralWidget(preview_);
-    resize(1280, 800);
+    resize(1560, 820);
+
+    auto* camera_dock = new QDockWidget(tr("Camera settings"), this);
+    camera_dock->setObjectName(QStringLiteral("cameraSettings"));
+    camera_dock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable);
+    auto* camera_scroll = new QScrollArea(camera_dock);
+    camera_scroll->setWidgetResizable(true);
+    camera_scroll->setWidget(camera_panel_);
+    camera_scroll->setMinimumWidth(300);
+    camera_dock->setWidget(camera_scroll);
+    addDockWidget(Qt::RightDockWidgetArea, camera_dock);
 
     decoder_choice_->addItem(tr("Decoder: auto (GPU if available)"), int(DecoderPreference::Auto));
     decoder_choice_->addItem(tr("Decoder: GPU"), int(DecoderPreference::Hardware));
@@ -108,6 +125,8 @@ MainWindow::MainWindow(QWidget* parent)
     snapshot_action->setToolTip(tr("Save the current frame as a picture in Pictures\\DJI VCam"));
     connect(snapshot_action, &QAction::triggered, this, &MainWindow::saveSnapshot);
     toolbar->addSeparator();
+    toolbar->addAction(camera_dock->toggleViewAction());
+    toolbar->addSeparator();
     vcam_action_->setCheckable(true);
     vcam_action_->setToolTip(tr("Offer the live view as the \"DJI VCam\" webcam to OBS, Zoom, browsers and other apps"));
     toolbar->addAction(vcam_action_);
@@ -127,6 +146,11 @@ MainWindow::MainWindow(QWidget* parent)
         }
     });
     connect(pipeline_, &Pipeline::stateChanged, this, &MainWindow::onSessionState);
+    connect(pipeline_, &Pipeline::cameraChanged, this, [this] { camera_panel_->showState(pipeline_->takeCameraState()); });
+    connect(pipeline_, &Pipeline::cameraError, this, [this](const QString& message) {
+        statusBar()->showMessage(tr("Camera: %1").arg(message), 8000);
+        camera_panel_->showState(pipeline_->takeCameraState());  // snap refused values back
+    });
     connect(pipeline_, &Pipeline::statsUpdated, this, &MainWindow::onStats);
     connect(pipeline_, &Pipeline::decoderChanged, this, &MainWindow::onDecoder);
     connect(pipeline_, &Pipeline::formatChanged, this, [this](int width, int height) {
@@ -237,6 +261,7 @@ void MainWindow::updateVirtualCameraStatus() {
 
 MainWindow::~MainWindow() {
     connector_->stop();
+    camera_panel_->setController(nullptr);  // the controller goes away with the pipeline's session
     pipeline_->stop();
 #ifdef DJIVCAM_HAVE_VCAM
     delete virtual_camera_;
@@ -275,6 +300,7 @@ void MainWindow::toggleConnection(bool connect) {
     decoder_choice_->setEnabled(!connect);
     if (!connect) {
         connector_->stop();
+        camera_panel_->setController(nullptr);
         pipeline_->stop();
         preview_->clear();
         streaming_ = false;
@@ -286,6 +312,7 @@ void MainWindow::toggleConnection(bool connect) {
     }
     const auto decoder = static_cast<DecoderPreference>(decoder_choice_->currentData().toInt());
     if (!replay_file_.isEmpty()) {
+        camera_panel_->setController(nullptr);
         pipeline_->startReplay(replay_file_, decoder);
         return;
     }
@@ -294,8 +321,13 @@ void MainWindow::toggleConnection(bool connect) {
     config.identifier = pairingIdentifier().toStdString();
     config.token = kPairingToken.toStdString();
     config.gap_timeout = std::chrono::milliseconds(settings_->value(kGapWaitKey, 0).toInt());
+    const QString camera_ip = settings_->value(kCameraIpKey, QString::fromStdString(config.camera_ip)).toString();
+    config.camera_ip = camera_ip.toStdString();
+    config.camera_subnet_prefix = camera_ip.left(camera_ip.lastIndexOf(QLatin1Char('.')) + 1).toStdString();
     network_missing_.invalidate();
+    camera_panel_->setController(nullptr);
     pipeline_->start(config, decoder);
+    camera_panel_->setController(pipeline_->camera());
     if (bluetooth_action_->isChecked()) {
         if (CameraConnector::bluetoothAvailable()) {
             connector_->start(pairingIdentifier(), kPairingToken, settings_->value(kAddressKey).toString());

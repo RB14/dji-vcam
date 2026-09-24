@@ -97,6 +97,11 @@ The version comes from `project(dji-vcam VERSION ...)` in `app/CMakeLists.txt`.
 - `dji-vcam-cli --decode-bench FILE [--decoder auto|gpu|cpu]` decodes a recording as fast as
   possible and prints the cost of each per-frame step; the live view needs under 33 ms per frame.
   On the development laptop (Intel iGPU) a real recording takes about 3 ms (D3D11VA or CPU).
+- `./obs-dji.sh fake-camera --video captures/liveview-<time>.bin` stands in for the camera's side
+  of the datalink: it streams the recording, answers requests and keeps a small settings state
+  with the documented status pushes. Point the app at it with the advanced setting
+  `connect/cameraIp` = `127.0.0.1` (registry `HKCU\Software\dji-vcam\dji-vcam\connect`, turn off
+  the Bluetooth and bridge options too) or `dji-vcam-cli --camera-ip 127.0.0.1`.
 
 ### Experimenting with camera commands
 
@@ -109,7 +114,9 @@ dji-vcam-cli --seconds 30 --show-messages --send 01,02,8e,0100
 
 `--send receiver,cmd_set,cmd_id[,payload]` (hex, repeatable) is sent once streaming starts and
 its reply printed; `--show-messages` prints every message the camera sends except the replies to
-the session's own keep-alives.
+the session's own keep-alives. `--camera` follows the camera's settings through the app's camera
+controls and prints them whenever they change; `--camera-set Stabilization=3` (repeatable, codes
+from [camera-controls.md](camera-controls.md)) changes one the way the app's panel does.
 
 ## Desktop app on Linux
 

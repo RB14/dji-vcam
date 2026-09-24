@@ -76,6 +76,28 @@ To remove the component installed by the portable app, run in an administrator p
 `regsvr32 /u "C:\ProgramData\DJI VCam\djivcam-source.dll"`, then delete that folder. (The
 installer's uninstaller does this by itself.)
 
+## Camera settings
+
+The **Camera settings** panel on the right (toolbar: *Camera settings* shows or hides it) works
+like the DJI Mimo app while the camera is connected:
+
+- **Start / Stop recording** and **Take photo** (in Photo mode), with the recording time, battery
+  and memory card status above the settings.
+- **Shooting**: mode, recording format (resolution and aspect ratio, frame rate), codec.
+- **Image**: stabilization (RockSteady, RockSteady+, HorizonSteady, HorizonBalancing), Daily/Sport,
+  FOV.
+- **Exposure**: auto or manual; EV, auto ISO limit and anti-flicker in auto; ISO and shutter speed
+  in manual.
+- **Color**: white balance (auto or Kelvin), color profile (Normal, HLG, D-Log M), texture, noise
+  reduction.
+
+The lists only offer what the camera accepts in its current mode and format. Changes are made on
+the camera: if it refuses one, the control snaps back and the status bar says why. Settings that
+the camera cannot change while recording are disabled during a recording.
+
+> The camera controls are new and have not been tried on a camera yet; report anything that does
+> not match what the camera shows.
+
 ## Snapshots
 
 **Snapshot** in the toolbar saves the current frame of the live view, at the camera's resolution,

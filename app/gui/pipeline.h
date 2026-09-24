@@ -17,6 +17,7 @@
 #include <mutex>
 #include <thread>
 
+#include "djivcam/camera_controller.h"
 #include "djivcam/decoder.h"
 #include "djivcam/h264.h"
 #include "djivcam/session.h"
@@ -57,6 +58,11 @@ public:
     // Decoded frames are also published to this virtual camera (may be null). Set while stopped.
     void setVirtualCamera(djivcam::vcam::VirtualCamera* camera) { virtual_camera_ = camera; }
 
+    // The camera's settings while connected live (null otherwise, e.g. during a replay).
+    djivcam::camera::CameraController* camera() const { return camera_.get(); }
+    // The camera's latest state. Taking it re-arms cameraChanged().
+    djivcam::camera::CameraState takeCameraState();
+
 signals:
     // Emitted when a new frame is waiting and the previous notification was consumed, so a slow
     // UI skips frames instead of queueing them (which would add ever-growing latency).
@@ -67,6 +73,10 @@ signals:
     void formatChanged(int width, int height);
     void decoderChanged(const QString& backend, bool hardware);
     void errorOccurred(const QString& message);
+    // The camera reported new settings or status (coalesced: call takeCameraState()).
+    void cameraChanged();
+    // A camera setting or action failed, with the reason.
+    void cameraError(const QString& message);
 
 private:
     using Clock = std::chrono::steady_clock;
@@ -82,6 +92,8 @@ private:
     void report_stats();
 
     std::unique_ptr<djivcam::LiveViewSession> session_;
+    std::unique_ptr<djivcam::camera::CameraController> camera_;
+    std::atomic<bool> camera_notified_{false};
     std::unique_ptr<djivcam::h264::AccessUnitAssembler> assembler_;
     std::mutex mutex_;
     std::condition_variable_any wake_;

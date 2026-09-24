@@ -41,10 +41,22 @@ void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPrefe
     auto on_state = [this](djivcam::SessionState state, const std::string& detail) {
         if (state != djivcam::SessionState::Streaming) {
             assembler_->reset();
+        } else if (camera_) {
+            camera_->on_streaming();  // (re)subscribe to the camera's settings
         }
         emit stateChanged(QString::fromUtf8(djivcam::to_string(state)), QString::fromStdString(detail));
     };
     session_ = std::make_unique<djivcam::LiveViewSession>(std::move(config), on_video, on_state);
+    camera_notified_ = false;
+    camera_ = std::make_unique<djivcam::camera::CameraController>(
+        *session_,
+        [this] {
+            if (!camera_notified_.exchange(true)) {
+                emit cameraChanged();
+            }
+        },
+        [this](const std::string& error) { emit cameraError(QString::fromStdString(error)); });
+    session_->set_message_callback([this](const djivcam::duml::Frame& frame) { camera_->on_message(frame); });
     session_->start();
 }
 
@@ -88,6 +100,7 @@ void Pipeline::stop() {
     stats_timer_.stop();
     if (session_) {
         session_->stop();  // joins the session thread: no more callbacks after this
+        camera_.reset();   // talks through the session: goes first
         session_.reset();
     }
     if (replay_.joinable()) {
@@ -186,6 +199,11 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
             raise_to(worst_delay_us_, std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - queued.arrived).count());
         }
     }
+}
+
+djivcam::camera::CameraState Pipeline::takeCameraState() {
+    camera_notified_ = false;
+    return camera_ ? camera_->state() : djivcam::camera::CameraState{};
 }
 
 Pipeline::Frame Pipeline::takeLatestFrame() {

@@ -8,6 +8,7 @@
 #   ble scan|creds [--bridge COMx] [-v]   pair with the camera over BLE, read its AP credentials
 #   bridge [--port COMx] <console cmd>    talk to the ESP32 USB Wi-Fi bridge (status, scan, wifi ...)
 #   live [--seconds N] [-v]               open the camera datalink and try to start the live view
+#   fake-camera [--video FILE]            stand-in for the camera's datalink side (app development)
 #   capture prepare|start|stop|pull       record a Mimo session on the rooted Android phone
 #   flash-bridge <COMx>                   full flash of firmware/usb-wifi-bridge (board in download mode)
 #   ota-bridge [--port COMx]              update the running bridge over its USB console (no buttons)
@@ -52,6 +53,9 @@ case "$command" in
         ;;
     live)
         "$PYTHON" "$(win "$SCRIPT_DIR/tools/dji_liveview.py")" "$@"
+        ;;
+    fake-camera)
+        "$PYTHON" "$(win "$SCRIPT_DIR/tools/fake_camera.py")" "$@"
         ;;
     capture)
         "$SCRIPT_DIR/tools/phone_capture.sh" "$@"

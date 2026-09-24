@@ -5,9 +5,21 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 
 ## Now
 
-- [~] **Camera controls research**: payload formats for every camera function Mimo exposes
-      (from the Mimo APK: decompiled Java, `libacb204_proto.so` = Action 5 Pro protocol definitions,
-      `libdjisdk_jni.so` command map; DJI R-SDK docs; Moblin).
+- [~] **Camera controls** (milestone 7): research in [camera-controls.md](camera-controls.md);
+      implemented in the app (Camera settings panel) and the CLI (`--camera`, `--camera-set`),
+      tested against `tools/fake_camera.py`. **Not yet run against the real camera.**
+      - [ ] With the camera: experiments 1-3 of camera-controls.md section 6 (status dump and diff,
+            parameter GET sweep, setter round-trips), then fix any layout that differs on the A5P
+      - [x] Mode, record start/stop, photo, recording time
+      - [x] Format (resolution with aspect ratio, frame rate), codec
+      - [x] Stabilization, Daily/Sport, FOV
+      - [x] Exposure mode, ISO, shutter, EV, auto ISO limit, anti-flicker
+      - [x] White balance (auto / Kelvin), color profile, texture, noise reduction
+      - [x] Status: battery, storage, metered ISO/shutter
+      - [ ] Status: temperature (push not identified yet), timecode
+      - [ ] Audio: mic channel (parameter 0x0020, set unconfirmed); wind noise is not exposed by Mimo
+      - [ ] Timelapse / hyperlapse parameters, photo size/format/burst, custom modes, loop recording
+      - [ ] Slow-motion speed (format with speed ratio), AE lock, spot metering, HDR video
 - [~] **Virtual webcam, Windows** (milestone 3): Media Foundation virtual camera ("DJI VCam") fed by
       the app through shared memory; visible in OBS, Zoom, Teams, browsers, Windows Camera.
       - [x] Media source COM DLL (IMFMediaSource/IMFMediaStream, NV12 frames)
@@ -18,18 +30,6 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 
 ## Next
 
-- [ ] **Camera controls** (milestone 7), read current values and change them from the app:
-      - [ ] Camera mode: video / photo / slow motion / timelapse / hyperlapse
-      - [ ] Record start/stop, take photo, recording time
-      - [ ] Video resolution, aspect ratio (16:9 / 4:3), frame rate
-      - [ ] Stabilization: off / RockSteady / RockSteady+ / HorizonSteady / HorizonBalancing
-      - [ ] FOV (wide / dewarp / ...)
-      - [ ] Exposure: auto / manual, ISO, shutter speed, EV compensation, metering, anti-flicker
-      - [ ] White balance (auto / manual Kelvin)
-      - [ ] Color: normal / D-Log M / HLG, sharpness, noise reduction
-      - [ ] Audio: microphone, wind noise reduction, levels
-      - [ ] Status: battery, storage, temperature, timecode
-      - [ ] "Camera settings" panel in the app with live values
 - [~] **Windows installer**: Inno Setup script (installs the app, registers the virtual camera,
       Start-menu entry, uninstaller); output `binaries/dji-vcam-setup-<version>.exe` (git-ignored)
       - [x] Installer script, packaging, app-local Visual C++ runtime
@@ -43,7 +43,8 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 
 - [ ] Linux: v4l2loopback virtual camera, BlueZ, NetworkManager link; test on a real Linux machine
 - [ ] Wi-Fi adapter link: detect a second adapter, join the camera AP on it, keep internet routing
-- [ ] 1080p30: try the camera's RTMP mode (proven 1080p) received by the app
+- [ ] 1080p30: try the camera's RTMP mode (proven 1080p) received by the app; first the cheap
+      live-view experiments 4 and 8 of camera-controls.md (09/A8 enable, stream-quality parameter)
 - [ ] Loss and re-sends: A/B test with the camera on a lossy link, the default (ACK the newest
       datagram at once) against waiting for re-sends (`video/gapWaitMs` = 50 in the app's
       settings); compare "delay", "recovered", "dup" and the seconds of lag seen on 2026-09-25

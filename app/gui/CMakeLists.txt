@@ -4,6 +4,7 @@ qt_standard_project_setup()
 qt_add_executable(dji-vcam WIN32
     main.cpp
     bridge_link.cpp bridge_link.h
+    camera_panel.cpp camera_panel.h
     camera_connector.cpp camera_connector.h
     main_window.cpp main_window.h
     pipeline.cpp pipeline.h

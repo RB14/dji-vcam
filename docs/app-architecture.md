@@ -28,6 +28,8 @@ app/
     session         state machine: wait for route -> poke -> handshake -> register ->
                     live-view trigger -> heartbeat/ACK loop -> reconnect on silence
     h264            reassembles video datagrams into access units, drops DJI's 0xFF units
+    camera_*        camera settings: DUML command builders, status-topic parsers, and a
+                    controller that keeps them in sync over the session (camera-controls.md)
     decoder         FFmpeg decode (low-delay flags, GPU first) to NV12 frames
     ble             pairing (one on-camera approval), AP wake, AP credentials
     link            how the host reaches 192.168.2.1:
@@ -66,10 +68,11 @@ converts colors nor scales. About 3 ms of CPU per frame on an Intel iGPU laptop.
 6. **Quality.** 1080p30 target: remaining routes are the camera's RTMP mode (proven 1080p) and
    further datalink experiments; GPU decode (done: D3D11VA/VAAPI/NVDEC with CPU fallback),
    zero-copy GPU frames to the preview and virtual camera.
-7. **Camera controls.** Everything Mimo exposes: resolution/aspect/frame rate, stabilization
-   (RockSteady/HorizonSteady...), FOV, exposure (mode, ISO, shutter, EV), white balance, color,
-   audio, photo/record. Starting points: `docs/reference/duml-command-map.txt`, the DDS topics the
-   camera publishes on `0x00/0x99`, Moblin's `0x02/0x8E` stabilization payload.
+7. **Camera controls.** Everything Mimo exposes, researched in [camera-controls.md](camera-controls.md).
+   Implemented: `core` camera_protocol (command builders, status parsers) and camera_controller
+   (subscribes to the camera's status topics on every connection, one request in flight, read-back
+   after each change), the GUI's Camera settings panel and the CLI's `--camera` / `--camera-set`.
+   Tested against `tools/fake_camera.py`; the first run against the real camera is pending.
 
 ## Deliverables after milestone 1
 

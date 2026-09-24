@@ -7,6 +7,7 @@
 #include "camera_connector.h"
 
 class QAction;
+class CameraPanel;
 class QComboBox;
 class QLabel;
 class QSettings;
@@ -50,6 +51,7 @@ private:
     Pipeline* pipeline_;
     CameraConnector* connector_;
     PreviewWidget* preview_;
+    CameraPanel* camera_panel_;
     QAction* connect_action_;
     QAction* bluetooth_action_;
     QAction* bridge_action_;

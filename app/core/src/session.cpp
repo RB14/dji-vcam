@@ -273,6 +273,9 @@ void LiveViewSession::run(std::stop_token stop) {
                 next_trigger = now + kTriggerInterval;
             }
         }
+        if (stop.stop_requested()) {
+            set_state(SessionState::Stopped, "");  // before failing requests, so nobody queues new ones
+        }
         tracker.fail_all();  // the link is going down: nobody will answer
         fail_outgoing();
     }

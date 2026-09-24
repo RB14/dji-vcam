@@ -6,9 +6,10 @@ its live preview, instead of the camera's RTMP push.
 
 > Status (2026-09-25): the Windows app connects with one click (Bluetooth wake, bridge setup,
 > live view), shows H.264 1280x720 at ~30 fps and ~3.5 Mbit/s, decoded on the GPU, with
-> **~135 ms glass-to-glass** latency, and offers it to other apps as the **DJI VCam** webcam.
-> Next: camera controls, an installer, Linux, and a USB Wi-Fi adapter as the network link. See
-> [docs/app-architecture.md](docs/app-architecture.md).
+> **~135 ms glass-to-glass** latency, and offers it to other apps as the **DJI VCam** webcam. A
+> Camera settings panel exposes Mimo's controls (awaiting its first test on the camera); a Windows
+> installer is built by `app/scripts/package-windows.sh`. Next: Linux and a USB Wi-Fi adapter as
+> the network link. See [docs/app-architecture.md](docs/app-architecture.md) and [docs/tasks.md](docs/tasks.md).
 >
 > The repository is still called `obs-dji`; it will be renamed to `dji-vcam`.
 
@@ -20,6 +21,8 @@ its live preview, instead of the camera's RTMP push.
 | [docs/building.md](docs/building.md) | Building the app, the bridge firmware and the tools |
 | [docs/app-architecture.md](docs/app-architecture.md) | Architecture, milestones, open questions |
 | [docs/protocol-notes.md](docs/protocol-notes.md) | The camera protocol: Bluetooth, datalink, live view, findings |
+| [docs/camera-controls.md](docs/camera-controls.md) | Camera settings over DUML: every Mimo control, status topics, experiments |
+| [docs/tasks.md](docs/tasks.md) | The living task list |
 | [firmware/usb-wifi-bridge/README.md](firmware/usb-wifi-bridge/README.md) | The ESP32-S3 USB Wi-Fi bridge |
 
 ## How it works

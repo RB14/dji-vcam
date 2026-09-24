@@ -5,6 +5,8 @@ add_library(djivcam_core STATIC
     src/net.cpp
     src/reassembler.cpp
     src/request_tracker.cpp
+    src/camera_controller.cpp
+    src/camera_protocol.cpp
     src/session.cpp
 )
 target_include_directories(djivcam_core PUBLIC include)
