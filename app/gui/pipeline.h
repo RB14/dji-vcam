@@ -18,6 +18,10 @@
 #include "djivcam/h264.h"
 #include "djivcam/session.h"
 
+namespace djivcam::vcam {
+class VirtualCamera;
+}
+
 class Pipeline : public QObject {
     Q_OBJECT
 
@@ -31,6 +35,8 @@ public:
 
     // The most recent decoded frame (null if none). Taking it re-arms frameAvailable().
     QImage takeLatestFrame();
+    // Decoded frames are also published to this virtual camera (may be null). Set while stopped.
+    void setVirtualCamera(djivcam::vcam::VirtualCamera* camera) { virtual_camera_ = camera; }
 
 signals:
     // Emitted when a new frame is waiting and the previous notification was consumed, so a slow
@@ -63,6 +69,7 @@ private:
     std::uint64_t last_video_bytes_ = 0;
     std::uint64_t last_video_datagrams_ = 0;
     std::uint64_t last_lost_ = 0;
+    djivcam::vcam::VirtualCamera* virtual_camera_ = nullptr;
     int width_ = 0;   // decode thread only
     int height_ = 0;
 };

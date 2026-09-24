@@ -10,14 +10,22 @@
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
+#include <QSignalBlocker>
 #include <QToolButton>
 
 #include <algorithm>
+
+#include <QCoreApplication>
+#include <QDir>
 
 #include "bridge_link.h"
 #include "djivcam/camera_ble.h"
 #include "pipeline.h"
 #include "preview_widget.h"
+
+#ifdef DJIVCAM_HAVE_VCAM
+#include "djivcam/virtual_camera.h"
+#endif
 
 using djivcam::media::DecoderPreference;
 using Stage = CameraConnector::Stage;
@@ -30,6 +38,7 @@ const QString kBluetoothKey = QStringLiteral("connect/wakeOverBluetooth");
 const QString kBridgeKey = QStringLiteral("connect/configureBridge");
 const QString kStartupKey = QStringLiteral("connect/onStartup");
 const QString kDecoderKey = QStringLiteral("video/decoder");
+const QString kVirtualCameraKey = QStringLiteral("vcam/enabled");
 const QString kPairingToken = QStringLiteral("obsd");  // shown on the camera's approval prompt
 constexpr qint64 kRewakeAfterMs = 20000;                // camera network gone this long: wake again
 
@@ -56,6 +65,8 @@ MainWindow::MainWindow(QWidget* parent)
       format_label_(new QLabel(this)),
       stats_label_(new QLabel(this)),
       decoder_label_(new QLabel(this)) {
+    vcam_action_ = new QAction(tr("Virtual camera"), this);
+    vcam_label_ = new QLabel(this);
     setWindowTitle(tr("DJI VCam - DJI Osmo Action live view"));
     setCentralWidget(preview_);
     resize(1280, 800);
@@ -86,9 +97,14 @@ MainWindow::MainWindow(QWidget* parent)
     toolbar->addWidget(decoder_choice_);
     toolbar->addWidget(options_button);
     toolbar->addSeparator();
+    vcam_action_->setCheckable(true);
+    vcam_action_->setToolTip(tr("Offer the live view as the \"DJI VCam\" webcam to OBS, Zoom, browsers and other apps"));
+    toolbar->addAction(vcam_action_);
+    toolbar->addSeparator();
     toolbar->addWidget(camera_label_);
 
     statusBar()->addWidget(state_label_, 1);
+    statusBar()->addPermanentWidget(vcam_label_);
     statusBar()->addPermanentWidget(format_label_);
     statusBar()->addPermanentWidget(stats_label_);
     statusBar()->addPermanentWidget(decoder_label_);
@@ -116,14 +132,88 @@ MainWindow::MainWindow(QWidget* parent)
         settings_->setValue(kAddressKey, address);
     });
 
+#ifdef DJIVCAM_HAVE_VCAM
+    virtual_camera_ = new djivcam::vcam::VirtualCamera();
+    pipeline_->setVirtualCamera(virtual_camera_);
+    connect(vcam_action_, &QAction::toggled, this, &MainWindow::enableVirtualCamera);
+    auto* vcam_timer = new QTimer(this);
+    connect(vcam_timer, &QTimer::timeout, this, &MainWindow::updateVirtualCameraStatus);
+    vcam_timer->start(1000);
+    if (settings_->value(kVirtualCameraKey, true).toBool()) {
+        QTimer::singleShot(0, this, [this] { vcam_action_->setChecked(true); });
+    }
+#else
+    vcam_action_->setEnabled(false);
+    vcam_action_->setToolTip(tr("The virtual camera is not available on this platform yet"));
+#endif
+    updateVirtualCameraStatus();
+
     if (startup_action_->isChecked()) {
         QTimer::singleShot(0, this, &MainWindow::connectCamera);
     }
 }
 
+void MainWindow::enableVirtualCamera(bool on) {
+#ifdef DJIVCAM_HAVE_VCAM
+    using djivcam::vcam::VirtualCamera;
+    if (!on) {
+        virtual_camera_->stop();  // safe while the decoder thread publishes (guarded inside)
+        settings_->setValue(kVirtualCameraKey, false);
+        updateVirtualCameraStatus();
+        return;
+    }
+    std::string error;
+    if (!VirtualCamera::source_registered()) {
+        const auto answer = QMessageBox::question(
+            this, tr("Install the virtual camera"),
+            tr("The \"DJI VCam\" camera component must be installed once (administrator permission is "
+               "required). Install it now?"));
+        const QString dll = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("djivcam-source.dll"));
+        if (answer != QMessageBox::Yes ||
+            !VirtualCamera::install_source(QDir::toNativeSeparators(dll).toStdWString(), &error)) {
+            if (!error.empty()) {
+                QMessageBox::warning(this, tr("Virtual camera"), QString::fromStdString(error));
+            }
+            QSignalBlocker block(vcam_action_);
+            vcam_action_->setChecked(false);
+            updateVirtualCameraStatus();
+            return;
+        }
+    }
+    if (!virtual_camera_->start(&error)) {
+        QMessageBox::warning(this, tr("Virtual camera"), QString::fromStdString(error));
+        QSignalBlocker block(vcam_action_);
+        vcam_action_->setChecked(false);
+    } else {
+        settings_->setValue(kVirtualCameraKey, true);
+    }
+    updateVirtualCameraStatus();
+#else
+    (void)on;
+#endif
+}
+
+void MainWindow::updateVirtualCameraStatus() {
+#ifdef DJIVCAM_HAVE_VCAM
+    using djivcam::vcam::VirtualCamera;
+    QString text;
+    if (!virtual_camera_->running()) {
+        text = VirtualCamera::source_registered() ? tr("Webcam: off") : tr("Webcam: not installed");
+    } else {
+        text = virtual_camera_->in_use() ? tr("Webcam: in use") : tr("Webcam: ready");
+    }
+    vcam_label_->setText(text);
+#else
+    vcam_label_->setText(tr("Webcam: not available on this platform"));
+#endif
+}
+
 MainWindow::~MainWindow() {
     connector_->stop();
     pipeline_->stop();
+#ifdef DJIVCAM_HAVE_VCAM
+    delete virtual_camera_;
+#endif
 }
 
 void MainWindow::connectCamera() { connect_action_->setChecked(true); }

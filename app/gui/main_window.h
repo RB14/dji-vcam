@@ -13,6 +13,10 @@ class QSettings;
 class Pipeline;
 class PreviewWidget;
 
+namespace djivcam::vcam {
+class VirtualCamera;
+}
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -34,6 +38,8 @@ private:
     void forgetCamera();
     void showStage(const QString& text, bool attention = false);
     QString pairingIdentifier();
+    void enableVirtualCamera(bool on);
+    void updateVirtualCameraStatus();
 
     QSettings* settings_;
     Pipeline* pipeline_;
@@ -43,6 +49,9 @@ private:
     QAction* bluetooth_action_;
     QAction* bridge_action_;
     QAction* startup_action_;
+    QAction* vcam_action_;
+    QLabel* vcam_label_;
+    djivcam::vcam::VirtualCamera* virtual_camera_ = nullptr;
     QComboBox* decoder_choice_;
     QLabel* camera_label_;
     QLabel* state_label_;

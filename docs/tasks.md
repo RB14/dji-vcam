@@ -8,12 +8,13 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 - [~] **Camera controls research**: payload formats for every camera function Mimo exposes
       (from the Mimo APK: decompiled Java, `libacb204_proto.so` = Action 5 Pro protocol definitions,
       `libdjisdk_jni.so` command map; DJI R-SDK docs; Moblin).
-- [ ] **Virtual webcam, Windows** (milestone 3): Media Foundation virtual camera ("DJI VCam") fed by
+- [~] **Virtual webcam, Windows** (milestone 3): Media Foundation virtual camera ("DJI VCam") fed by
       the app through shared memory; visible in OBS, Zoom, Teams, browsers, Windows Camera.
-      - [ ] Media source COM DLL (IMFMediaSource/IMFMediaStream, NV12 frames)
-      - [ ] Shared-memory frame transport app -> Frame Server
-      - [ ] Registration (admin, once) and MFCreateVirtualCamera lifetime handling in the app
-      - [ ] "Virtual camera" toggle and status in the app; test in OBS and a browser
+      - [x] Media source COM DLL (IMFMediaSource/IMFMediaStream, NV12 frames)
+      - [x] Shared-memory frame transport app -> Frame Server
+      - [x] Registration (admin, once) and MFCreateVirtualCamera lifetime handling in the app
+      - [x] "Virtual camera" toggle and status in the app; verified with a DirectShow client
+      - [ ] Check in OBS, a browser and the Windows Camera app
 
 ## Next
 

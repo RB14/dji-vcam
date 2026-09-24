@@ -1,9 +1,11 @@
 // dji-vcam-cli: runs the camera connection without the GUI and prints its progress.
 //
 // Usage: dji-vcam-cli [--ble] [--seconds N] [--identifier-file PATH] [--dump PATH]
+//        dji-vcam-cli --vcam-test N    publish a test pattern to the DJI VCam webcam for N seconds
 //   --ble              wake the camera's Wi-Fi over Bluetooth first and keep the BLE link alive
 //   --identifier-file  file holding the approved pairing identifier (never printed)
 //   --dump             write the received H.264 stream to PATH
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -16,6 +18,15 @@
 #ifdef DJIVCAM_HAVE_BLE
 #include "djivcam/camera_ble.h"
 #endif
+
+#ifdef DJIVCAM_HAVE_VCAM
+#include <vector>
+
+#include "djivcam/vcam_protocol.h"
+#include "djivcam/virtual_camera.h"
+#endif
+
+
 
 namespace {
 
@@ -31,9 +42,46 @@ void say(const std::string& message) {
 
 }  // namespace
 
+#ifdef DJIVCAM_HAVE_VCAM
+namespace {
+
+// Starts the "DJI VCam" webcam and publishes a moving test pattern for `seconds`.
+int run_vcam_test(int seconds) {
+    namespace vc = djivcam::vcam;
+    say(std::string("virtual camera component registered: ") + (vc::VirtualCamera::source_registered() ? "yes" : "no"));
+    vc::VirtualCamera camera;
+    std::string error;
+    if (!camera.start(&error)) {
+        say("virtual camera start failed: " + error);
+        return 1;
+    }
+    say("virtual camera started: open \"DJI VCam\" in an app (Windows Camera, OBS, browser)");
+    std::vector<std::uint8_t> frame(vc::kFrameSize);
+    const auto end = steady_clock::now() + std::chrono::seconds(seconds);
+    for (int n = 0; steady_clock::now() < end; ++n) {
+        for (std::uint32_t y = 0; y < vc::kHeight; ++y) {  // diagonal luma bars moving right
+            for (std::uint32_t x = 0; x < vc::kWidth; ++x) {
+                frame[y * vc::kWidth + x] = static_cast<std::uint8_t>(((x + y + n * 8) / 64 % 2) ? 200 : 40);
+            }
+        }
+        std::fill(frame.begin() + vc::kWidth * vc::kHeight, frame.end(), std::uint8_t{128});
+        camera.publish(frame.data());
+        if (n % 30 == 0) {
+            say(std::string("publishing, consumer attached: ") + (camera.in_use() ? "yes" : "no"));
+        }
+        std::this_thread::sleep_for(33ms);
+    }
+    camera.stop();
+    return 0;
+}
+
+}  // namespace
+#endif
+
 int main(int argc, char* argv[]) {
     int seconds = 20;
     bool use_ble = false;
+    int vcam_test_seconds = 0;
     std::string identifier_file;
     std::string dump_path;
     for (int i = 1; i < argc; ++i) {
@@ -41,6 +89,8 @@ int main(int argc, char* argv[]) {
         const bool has_value = i + 1 < argc;
         if (flag == "--ble") {
             use_ble = true;
+        } else if (flag == "--vcam-test" && has_value) {
+            vcam_test_seconds = std::stoi(argv[++i]);
         } else if (flag == "--seconds" && has_value) {
             seconds = std::stoi(argv[++i]);
         } else if (flag == "--identifier-file" && has_value) {
@@ -51,6 +101,15 @@ int main(int argc, char* argv[]) {
             std::fprintf(stderr, "unknown argument: %s\n", flag.c_str());
             return 2;
         }
+    }
+
+    if (vcam_test_seconds > 0) {
+#ifdef DJIVCAM_HAVE_VCAM
+        return run_vcam_test(vcam_test_seconds);
+#else
+        std::fprintf(stderr, "built without the virtual camera\n");
+        return 2;
+#endif
     }
 
     djivcam::SessionConfig config;

@@ -28,6 +28,8 @@ cp "$BUILD/cli/Release/dji-vcam-cli.exe" "$OUT/"
 cp "$REPO_DIR/docs/installing.md" "$OUT/README.md"
 cp "$FFMPEG/LICENSE.txt" "$OUT/licenses/FFmpeg-LICENSE.txt"
 cp "$BUILD/_deps/simpleble-src/LICENSE.md" "$OUT/licenses/SimpleBLE-LICENSE.md"
+cp "$APP_DIR/vcam/windows/source/LICENSE-VCamSample.txt" "$OUT/licenses/VCamSample-LICENSE.txt"
+cp "$BUILD/_deps/wil-src/LICENSE" "$OUT/licenses/WIL-LICENSE.txt"
 cat > "$OUT/licenses/THIRD-PARTY-NOTICES.txt" <<'EOF'
 DJI VCam bundles the following third-party software, dynamically linked where noted.
 
@@ -41,6 +43,12 @@ FFmpeg 8.1 (https://ffmpeg.org) - LGPL-2.1-or-later build by BtbN
 SimpleBLE 1.1.0 (https://github.com/simpleble/simpleble) - Business Source License 1.1,
   statically linked. Free for non-commercial use; commercial use requires a license from the
   SimpleBLE authors. License text: SimpleBLE-LICENSE.md.
+
+VCamSample (https://github.com/smourier/VCamSample) - MIT. The virtual camera media source
+  (djivcam-source.dll) is adapted from it. License text: VCamSample-LICENSE.txt.
+
+Windows Implementation Libraries (https://github.com/microsoft/wil) - MIT, header-only, compiled
+  into djivcam-source.dll. License text: WIL-LICENSE.txt.
 
 DJI, Osmo and Mimo are trademarks of SZ DJI Technology Co., Ltd. This project is not affiliated
 with or endorsed by DJI.

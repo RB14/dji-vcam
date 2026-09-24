@@ -1,6 +1,12 @@
 #include "pipeline.h"
 
 #include <exception>
+#include <optional>
+
+#ifdef DJIVCAM_HAVE_VCAM
+#include "djivcam/vcam_protocol.h"
+#include "djivcam/virtual_camera.h"
+#endif
 #include <utility>
 
 namespace {
@@ -78,6 +84,9 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
         return;
     }
     emit decoderChanged(QString::fromStdString(decoder->backend()), decoder->hardware());
+#ifdef DJIVCAM_HAVE_VCAM
+    std::optional<djivcam::media::Nv12Canvas> canvas;  // virtual camera frames, created on first use
+#endif
 
     while (!stop.stop_requested()) {
         djivcam::h264::AccessUnit unit;
@@ -96,6 +105,14 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
                 height_ = frame->height;
                 emit formatChanged(width_, height_);
             }
+#ifdef DJIVCAM_HAVE_VCAM
+            if (virtual_camera_ && virtual_camera_->running()) {
+                if (!canvas) {
+                    canvas.emplace(djivcam::vcam::kWidth, djivcam::vcam::kHeight);
+                }
+                virtual_camera_->publish(canvas->draw(*frame).data());
+            }
+#endif
             QImage image(frame->pixels.data(), frame->width, frame->height, frame->stride, QImage::Format_RGB32);
             bool notify = false;
             {

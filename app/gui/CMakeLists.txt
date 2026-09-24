@@ -11,6 +11,14 @@ qt_add_executable(dji-vcam WIN32
 )
 target_link_libraries(dji-vcam PRIVATE Qt6::Widgets Qt6::OpenGLWidgets Qt6::SerialPort djivcam_core djivcam_ble djivcam_media)
 
+if(TARGET djivcam_vcam)
+    target_link_libraries(dji-vcam PRIVATE djivcam_vcam)
+    # The media source DLL ships next to the exe; the app installs it for Windows on request.
+    add_dependencies(dji-vcam djivcam-source)
+    add_custom_command(TARGET dji-vcam POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:djivcam-source> $<TARGET_FILE_DIR:dji-vcam>)
+endif()
+
 if(WIN32)
     # Make the build directory runnable: Qt runtime (windeployqt) and FFmpeg DLLs next to the exe.
     get_target_property(qmake_path Qt6::qmake IMPORTED_LOCATION)

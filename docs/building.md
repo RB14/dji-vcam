@@ -47,8 +47,18 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 
 The runnable app is `build\gui\Release\dji-vcam.exe`: the build copies the Qt runtime
-(`windeployqt`) and the FFmpeg DLLs next to it. The diagnostic CLI is
-`build\cli\Release\dji-vcam-cli.exe`.
+(`windeployqt`), the FFmpeg DLLs and the virtual camera's media source (`djivcam-source.dll`) next
+to it. The diagnostic CLI is `build\cli\Release\dji-vcam-cli.exe`.
+
+The virtual camera needs the Windows SDK's Media Foundation headers (Windows 11 SDK) and fetches
+Microsoft's WIL headers at configure time. To try it without a camera,
+`dji-vcam-cli --vcam-test 30` publishes a moving test pattern to *DJI VCam* for 30 seconds (the
+media source must be installed: the app offers to do it, see [installing.md](installing.md)).
+
+While working on the media source itself, a rebuilt DLL does not replace the registered copy in
+`%ProgramData%\DJI VCam` (the camera service keeps it loaded). Install it with
+`app/scripts/update-vcam-source.ps1 -SourceDll <path>` from an administrator PowerShell; it stops
+the camera services, swaps and re-registers the DLL, and starts them again.
 
 ### Build from WSL
 

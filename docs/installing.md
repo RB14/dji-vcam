@@ -1,9 +1,10 @@
 # Installing and using DJI VCam
 
 DJI VCam shows the live view of a **DJI Osmo Action 5 Pro** on your computer over Wi-Fi, with about
-**135 ms** of delay, and (from milestone 3) offers it to other apps as a webcam.
+**135 ms** of delay, and offers it to other apps (OBS, Zoom, Teams, browsers) as the **DJI VCam**
+webcam.
 
-> Status: early preview for Windows 11. Linux support and the virtual webcam are in progress.
+> Status: early preview for Windows 11. Linux support is in progress.
 
 ## What you need
 
@@ -45,11 +46,23 @@ DJI VCam shows the live view of a **DJI Osmo Action 5 Pro** on your computer ove
 After the first approval, later connections need no taps. **Options → Connect on startup** makes
 the app connect by itself when it starts.
 
-## Using the video in OBS (until the virtual webcam lands)
+## Using DJI VCam as a webcam (OBS, Zoom, Teams, browsers)
 
-Add a **Window Capture** source in OBS and select the DJI VCam window. This adds a little delay; the
-virtual webcam (milestone 3) will make DJI VCam appear as a regular camera in OBS, Zoom, Teams,
-browsers and other apps.
+The **Virtual camera** button in the toolbar (on by default) makes the live view available as a
+camera named **DJI VCam** while the app runs. Apps that list cameras through DirectShow (OBS, Zoom,
+ffmpeg) show it as **DJI VCam (Windows Virtual Camera)**.
+
+- **First time only**: the app asks to install the camera component. Windows shows an
+  administrator prompt; the component is copied to `C:\ProgramData\DJI VCam` and registered there,
+  where the Windows camera service can load it.
+- **OBS**: add a **Video Capture Device** source and pick *DJI VCam (Windows Virtual Camera)*.
+- The webcam is always **1280x720 at 30 fps**. A 4:3 live view (960x720) gets black side bars.
+- Without video (not connected, camera asleep) the webcam shows a dark gray picture.
+- The status bar shows **Webcam: ready** (available, no app is using it), **Webcam: in use**,
+  **Webcam: off** or **Webcam: not installed**.
+
+To remove the component, run in an administrator prompt:
+`regsvr32 /u "C:\ProgramData\DJI VCam\djivcam-source.dll"`, then delete that folder.
 
 ## Options
 
@@ -70,3 +83,5 @@ browsers and other apps.
 | Stuck on "Waiting for the camera network" | Camera Wi-Fi band must be 2.4 GHz; the app re-wakes the camera after 20 s |
 | "No video, reconnecting" | Usually recovers by itself; the camera may be in a menu or playback screen |
 | Occasional noise | Wi-Fi interference on 2.4 GHz; keep the bridge and camera close and away from routers |
+| Webcam picture is dark gray | The app is not streaming: connect first. The webcam only exists while the app runs |
+| DJI VCam missing in an app | Check that the status bar says "Webcam: ready"; restart the other app so it lists cameras again |

@@ -48,4 +48,21 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
+// Draws frames into a fixed-size NV12 canvas, scaled to fit and letterboxed (black bars) when the
+// aspect ratio differs, e.g. 960x720 (4:3) into the virtual camera's 1280x720.
+class Nv12Canvas {
+public:
+    Nv12Canvas(int width, int height);
+    ~Nv12Canvas();
+    Nv12Canvas(const Nv12Canvas&) = delete;
+    Nv12Canvas& operator=(const Nv12Canvas&) = delete;
+
+    // Returns the canvas: Y plane (width x height) followed by the interleaved UV plane.
+    const std::vector<std::uint8_t>& draw(const BgraFrame& frame);
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
 }  // namespace djivcam::media

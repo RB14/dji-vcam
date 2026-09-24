@@ -34,9 +34,13 @@ app/
                       bridge   - ESP32-S3 USB NCM bridge (credentials over its console)
                       adapter  - a second Wi-Fi adapter (Windows WLAN API / NetworkManager)
   vcam/
-    windows/   Media Foundation virtual camera (MFCreateVirtualCamera, Windows 11 22H2+):
-               a COM media source DLL running in the Windows Camera Frame Server; frames
-               arrive from the app through shared memory. Visible to MF and DirectShow apps.
+    windows/   Media Foundation virtual camera "DJI VCam" (MFCreateVirtualCamera, Windows 11):
+               source/ is the COM media source DLL (djivcam-source.dll, adapted from
+               smourier/VCamSample) that the Windows Camera Frame Server loads. Its session-0
+               instance creates a Global shared-memory section (NV12 1280x720, 3 seqlock
+               slots, see include/djivcam/vcam_protocol.h) which the app opens and writes;
+               instances loaded inside apps read the app's Local section instead. The app
+               registers the camera for its own lifetime (MFVirtualCameraLifetime_Session).
     linux/     v4l2loopback writer (/dev/videoN), the mechanism OBS's Linux virtual camera uses
   gui/         Qt Widgets app: preview, connect/pair, link selection, settings, stats, tray icon
   tests/
@@ -50,7 +54,8 @@ fans decoded frames out to the preview and the virtual camera.
 1. **Core + preview (Windows).** duml, datalink, session, H.264 reassembly, FFmpeg decode, a Qt
    window showing the live view. The camera AP is still woken with `tools/dji_ble.py`.
 2. **Bluetooth in the app.** Pairing UI, automatic AP wake, reconnect when the camera sleeps.
-3. **Windows virtual camera.** "DJI Osmo Action" shows up in OBS, Zoom, Chrome.
+3. **Windows virtual camera.** Done: "DJI VCam" shows up in Media Foundation and DirectShow
+   apps (OBS, Zoom, Chrome), fed with the live view.
 4. **Linux.** v4l2loopback sink, BlueZ, NetworkManager; needs a real Linux machine for testing
    (WSL has neither Bluetooth nor v4l2loopback).
 5. **Wi-Fi adapter link.** Detect a second adapter, join the camera AP on it only, keep the

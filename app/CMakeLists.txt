@@ -19,7 +19,6 @@ add_subdirectory(core)
 if(DJIVCAM_WITH_BLE)
     add_subdirectory(ble)
 endif()
-add_subdirectory(cli)
 
 if(DJIVCAM_BUILD_TESTS)
     enable_testing()
@@ -28,5 +27,9 @@ endif()
 
 if(DJIVCAM_BUILD_GUI)
     add_subdirectory(media)
+    add_subdirectory(vcam)
     add_subdirectory(gui)
 endif()
+
+# After the optional components, so the CLI can use the ones that were built.
+add_subdirectory(cli)

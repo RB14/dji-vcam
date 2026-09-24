@@ -1,5 +1,6 @@
 #include "djivcam/decoder.h"
 
+#include <algorithm>
 #include <stdexcept>
 
 extern "C" {
@@ -172,6 +173,61 @@ std::optional<BgraFrame> H264Decoder::decode(std::span<const std::uint8_t> acces
         av_frame_unref(d.frame);
     }
     return latest;
+}
+
+struct Nv12Canvas::Impl {
+    int width;
+    int height;
+    std::vector<std::uint8_t> canvas;
+    SwsContext* scaler = nullptr;
+    int source_width = 0;
+    int source_height = 0;
+
+    ~Impl() { sws_freeContext(scaler); }
+
+    void clear() {
+        const std::size_t luma = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+        std::fill(canvas.begin(), canvas.begin() + static_cast<std::ptrdiff_t>(luma), std::uint8_t{16});  // black
+        std::fill(canvas.begin() + static_cast<std::ptrdiff_t>(luma), canvas.end(), std::uint8_t{128});   // neutral
+    }
+};
+
+Nv12Canvas::Nv12Canvas(int width, int height) : impl_(std::make_unique<Impl>()) {
+    impl_->width = width;
+    impl_->height = height;
+    impl_->canvas.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 3 / 2);
+    impl_->clear();
+}
+
+Nv12Canvas::~Nv12Canvas() = default;
+
+const std::vector<std::uint8_t>& Nv12Canvas::draw(const BgraFrame& frame) {
+    Impl& d = *impl_;
+    if (frame.width <= 0 || frame.height <= 0) {
+        return d.canvas;
+    }
+    // Fit inside the canvas keeping the aspect ratio; NV12 needs even sizes and offsets.
+    const double scale = std::min(static_cast<double>(d.width) / frame.width, static_cast<double>(d.height) / frame.height);
+    const int fitted_width = std::min(d.width, static_cast<int>(frame.width * scale) & ~1);
+    const int fitted_height = std::min(d.height, static_cast<int>(frame.height * scale) & ~1);
+    const int left = ((d.width - fitted_width) / 2) & ~1;
+    const int top = ((d.height - fitted_height) / 2) & ~1;
+    if (frame.width != d.source_width || frame.height != d.source_height) {
+        d.source_width = frame.width;
+        d.source_height = frame.height;
+        d.clear();  // new geometry: repaint the bars
+    }
+    d.scaler = sws_getCachedContext(d.scaler, frame.width, frame.height, AV_PIX_FMT_BGRA, fitted_width, fitted_height,
+                                    AV_PIX_FMT_NV12, SWS_BILINEAR, nullptr, nullptr, nullptr);
+    const std::size_t luma = static_cast<std::size_t>(d.width) * static_cast<std::size_t>(d.height);
+    std::uint8_t* planes[4] = {
+        d.canvas.data() + static_cast<std::size_t>(top) * d.width + left,
+        d.canvas.data() + luma + static_cast<std::size_t>(top / 2) * d.width + left, nullptr, nullptr};
+    const int strides[4] = {d.width, d.width, 0, 0};
+    const std::uint8_t* source[4] = {frame.pixels.data(), nullptr, nullptr, nullptr};
+    const int source_strides[4] = {frame.stride, 0, 0, 0};
+    sws_scale(d.scaler, source, source_strides, 0, frame.height, planes, strides);
+    return d.canvas;
 }
 
 }  // namespace djivcam::media
