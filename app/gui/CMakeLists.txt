@@ -29,4 +29,11 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:dji-vcam> $<TARGET_FILE_DIR:dji-vcam>
         COMMAND_EXPAND_LISTS
         VERBATIM)
+    # App-local Visual C++ runtime (redistributable DLLs of the building toolset), so the app also
+    # runs where the Visual C++ Redistributable is not installed.
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_SKIP TRUE)
+    include(InstallRequiredSystemLibraries)
+    add_custom_command(TARGET dji-vcam POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} $<TARGET_FILE_DIR:dji-vcam>
+        VERBATIM)
 endif()

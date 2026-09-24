@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Packages the Windows app as a portable ZIP: binaries/dji-vcam-<version>-win64.zip (git-ignored).
+# Packages the Windows app into binaries/ (git-ignored):
+#   dji-vcam-<version>-win64.zip     portable folder
+#   dji-vcam-setup-<version>.exe     installer (when Inno Setup 6 is installed:
+#                                    winget install JRSoftware.InnoSetup --scope user)
 #
 # Builds the Release configuration with app/scripts/build-windows.sh, then collects the app folder
-# (Qt runtime and FFmpeg DLLs are already deployed next to the exe), the CLI, the user guide and
-# third-party license texts.
+# (Qt runtime, FFmpeg and Visual C++ runtime DLLs are already deployed next to the exe), the CLI,
+# the user guide and third-party license texts. The installer is made from that same folder by
+# app/packaging/windows/dji-vcam.iss.
 #
 # Usage: app/scripts/package-windows.sh
 set -euo pipefail
@@ -56,3 +60,20 @@ EOF
 
 (cd "$REPO_DIR/binaries" && rm -f "$NAME.zip" && zip -qr "$NAME.zip" "$NAME")
 echo "Packaged: binaries/$NAME.zip ($(du -h "$REPO_DIR/binaries/$NAME.zip" | cut -f1))"
+
+ISCC=""
+for candidate in "$(win_env LOCALAPPDATA)\Programs\Inno Setup 6\ISCC.exe" \
+                 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 'C:\Program Files\Inno Setup 6\ISCC.exe'; do
+    if [ -f "$(wslpath -u "$candidate")" ]; then
+        ISCC="$(wslpath -u "$candidate")"
+        break
+    fi
+done
+if [ -z "$ISCC" ]; then
+    echo "Inno Setup 6 not found: skipping the installer (winget install JRSoftware.InnoSetup --scope user)"
+    exit 0
+fi
+"$ISCC" /Q "/DAppVersion=$VERSION" "/DSourceDir=$(wslpath -w "$OUT")" "/DOutputDir=$(wslpath -w "$REPO_DIR/binaries")" \
+    "$(wslpath -w "$APP_DIR/packaging/windows/dji-vcam.iss")"
+SETUP="binaries/dji-vcam-setup-$VERSION.exe"
+echo "Packaged: $SETUP ($(du -h "$REPO_DIR/$SETUP" | cut -f1))"

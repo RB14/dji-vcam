@@ -17,10 +17,16 @@ webcam.
 
 ## Install
 
-1. Extract `dji-vcam-<version>-win64.zip` anywhere (for example `C:\Program Files\DJI VCam` or
-   your Documents folder). A proper installer is coming.
-2. Run `dji-vcam.exe`. If Windows Firewall asks, allow access: the video arrives as network
-   traffic from the camera.
+**Installer (recommended)**: run `dji-vcam-setup-<version>.exe` and approve the administrator
+prompt. It installs DJI VCam into `C:\Program Files\DJI VCam`, registers the **DJI VCam** webcam,
+lets the camera's video through Windows Firewall and adds a Start-menu entry. To uninstall, use
+*Settings → Apps → Installed apps → DJI VCam*; that removes all of it again. Running a newer
+installer upgrades in place.
+
+**Portable ZIP**: extract `dji-vcam-<version>-win64.zip` anywhere and run `dji-vcam.exe`. If
+Windows Firewall asks, allow access: the video arrives as network traffic from the camera. The
+first time the virtual camera is turned on, the app installs the webcam component itself (one
+administrator prompt).
 
 ## Prepare the camera
 
@@ -57,17 +63,18 @@ The **Virtual camera** button in the toolbar (on by default) makes the live view
 camera named **DJI VCam** while the app runs. Apps that list cameras through DirectShow (OBS, Zoom,
 ffmpeg) show it as **DJI VCam (Windows Virtual Camera)**.
 
-- **First time only**: the app asks to install the camera component. Windows shows an
-  administrator prompt; the component is copied to `C:\ProgramData\DJI VCam` and registered there,
-  where the Windows camera service can load it.
+- **Portable ZIP, first time only**: the app asks to install the camera component. Windows shows
+  an administrator prompt; the component is copied to `C:\ProgramData\DJI VCam` and registered
+  there, where the Windows camera service can load it. (The installer does this during setup.)
 - **OBS**: add a **Video Capture Device** source and pick *DJI VCam (Windows Virtual Camera)*.
 - The webcam is always **1280x720 at 30 fps**. A 4:3 live view (960x720) gets black side bars.
 - Without video (not connected, camera asleep) the webcam shows a dark gray picture.
 - The status bar shows **Webcam: ready** (available, no app is using it), **Webcam: in use**,
   **Webcam: off** or **Webcam: not installed**.
 
-To remove the component, run in an administrator prompt:
-`regsvr32 /u "C:\ProgramData\DJI VCam\djivcam-source.dll"`, then delete that folder.
+To remove the component installed by the portable app, run in an administrator prompt:
+`regsvr32 /u "C:\ProgramData\DJI VCam\djivcam-source.dll"`, then delete that folder. (The
+installer's uninstaller does this by itself.)
 
 ## Options
 

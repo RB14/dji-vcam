@@ -30,8 +30,11 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       - [ ] Audio: microphone, wind noise reduction, levels
       - [ ] Status: battery, storage, temperature, timecode
       - [ ] "Camera settings" panel in the app with live values
-- [ ] **Windows installer**: Inno Setup script (installs the app, registers the virtual camera,
+- [~] **Windows installer**: Inno Setup script (installs the app, registers the virtual camera,
       Start-menu entry, uninstaller); output `binaries/dji-vcam-setup-<version>.exe` (git-ignored)
+      - [x] Installer script, packaging, app-local Visual C++ runtime
+      - [ ] Test install, upgrade and uninstall (needs an administrator prompt)
+      - [ ] App icon
 - [ ] **Replace SimpleBLE** (BUSL-1.1) with our own Bluetooth code: C++/WinRT on Windows, BlueZ
       over D-Bus on Linux, so the project stays freely licensable
 - [ ] **Rename** the repository folder and gdrive remote to `dji-vcam` (end of a session)

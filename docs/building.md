@@ -70,6 +70,25 @@ app/scripts/setup-windows-deps.sh                                # FFmpeg, once
 app/scripts/build-windows.sh RelWithDebInfo -DDJIVCAM_BUILD_GUI=ON
 ```
 
+### Packaging
+
+```bash
+winget install JRSoftware.InnoSetup --scope user     # once, for the installer (no admin needed)
+app/scripts/package-windows.sh
+```
+
+This builds the Release configuration and writes to `binaries/` (git-ignored):
+
+- `dji-vcam-<version>-win64.zip`: the portable app folder (Qt, FFmpeg and Visual C++ runtime
+  DLLs, the virtual camera's media source, the CLI, the user guide and license texts).
+- `dji-vcam-setup-<version>.exe`: the installer, made from the same folder by
+  `app/packaging/windows/dji-vcam.iss` (skipped when Inno Setup is not installed). It installs
+  into Program Files, registers the media source from there, adds a Windows Firewall rule for the
+  app and a Start-menu entry, and its uninstaller removes all of it (stopping the Windows camera
+  services first, since they keep the media source loaded).
+
+The version comes from `project(dji-vcam VERSION ...)` in `app/CMakeLists.txt`.
+
 ### Testing without the camera
 
 - `dji-vcam --replay FILE` plays a recorded H.264 stream in a loop at 30 fps instead of connecting,
