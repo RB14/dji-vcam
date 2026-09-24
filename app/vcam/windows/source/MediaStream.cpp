@@ -54,13 +54,21 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
 
 HRESULT MediaStream::Start(IMFMediaType* type)
 {
-	RETURN_HR_IF(MF_E_SHUTDOWN, !_queue || !_allocator);
+	// Same lock as RequestSample(): the queue and allocator must not change under a sample.
+	winrt::slim_lock_guard lock(_lock);
+	RETURN_HR_IF(MF_E_SHUTDOWN, !_queue || !_allocator || !_descriptor);
 
-	if (type)
+	wil::com_ptr_nothrow<IMFMediaType> current;
+	if (!type)
 	{
-		RETURN_IF_FAILED(type->GetGUID(MF_MT_SUBTYPE, &_format));
-		WINTRACE(L"MediaStream::Start format: %s", GUID_ToStringW(_format).c_str());
+		// restarted through SetStreamState(): keep the media type negotiated before
+		wil::com_ptr_nothrow<IMFMediaTypeHandler> handler;
+		RETURN_IF_FAILED(_descriptor->GetMediaTypeHandler(&handler));
+		RETURN_IF_FAILED(handler->GetCurrentMediaType(&current));
+		type = current.get();
 	}
+	RETURN_IF_FAILED(type->GetGUID(MF_MT_SUBTYPE, &_format));
+	WINTRACE(L"MediaStream::Start format: %s", GUID_ToStringW(_format).c_str());
 
 	// the app may not be running yet: Fill() keeps retrying
 	LOG_IF_FAILED(_reader.EnsureSection());
@@ -73,6 +81,7 @@ HRESULT MediaStream::Start(IMFMediaType* type)
 
 HRESULT MediaStream::Stop()
 {
+	winrt::slim_lock_guard lock(_lock);
 	RETURN_HR_IF(MF_E_SHUTDOWN, !_queue || !_allocator);
 
 	RETURN_IF_FAILED(_allocator->UninitializeSampleAllocator());
@@ -103,6 +112,8 @@ HRESULT MediaStream::SetD3DManager(IUnknown* manager)
 
 void MediaStream::Shutdown()
 {
+	// RequestSample() may be filling a sample on another thread: wait for it
+	winrt::slim_lock_guard lock(_lock);
 	if (_queue)
 	{
 		LOG_IF_FAILED_MSG(_queue->Shutdown(), "Queue shutdown failed");
@@ -221,6 +232,11 @@ STDMETHODIMP MediaStream::SetStreamState(MF_STREAM_STATE value)
 		break;
 
 	case MF_STREAM_STATE_RUNNING:
+		if (_state == MF_STREAM_STATE_PAUSED)
+		{
+			_state = value;  // resume: the allocator is still set up
+			break;
+		}
 		RETURN_IF_FAILED(Start(nullptr));
 		break;
 

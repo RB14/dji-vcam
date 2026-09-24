@@ -45,6 +45,9 @@ struct SectionHeader {
     volatile std::int64_t frame_counter;
     volatile std::uint64_t heartbeat_ms;  // GetTickCount64() of the last publish (system-wide clock)
     volatile std::int64_t slot_seq[kSlotCount];  // seqlock per slot: odd = being written
+    // GetTickCount64() of the last frame the camera service handed to an app: the webcam is in use.
+    // Written by the service's media source; left 0 by media sources older than this field.
+    volatile std::uint64_t reader_heartbeat_ms;
 };
 static_assert(sizeof(SectionHeader) <= kHeaderSize);
 

@@ -19,6 +19,8 @@ namespace {
 // How often to look for the section the camera service creates when an app opens the webcam (it
 // shows its gray "no signal" picture until the app has found it).
 constexpr ULONGLONG kReopenIntervalMs = 250;
+// No frame taken by an app for this long: the webcam is no longer in use.
+constexpr ULONGLONG kInUseTimeoutMs = 2000;
 
 std::string hresult_text(const char* what, HRESULT hr) {
     char text[96];
@@ -44,11 +46,13 @@ struct VirtualCamera::Impl {
     struct Target {
         HANDLE section = nullptr;
         std::uint8_t* view = nullptr;
+        std::uint32_t next_slot = 0;  // kept here, not trusted from the shared header
     };
     Target local;
     Target global;
     ULONGLONG last_open_attempt = 0;
     std::atomic<bool> section_open{false};
+    std::atomic<bool> running{false};
     std::mutex publish_mutex;  // publish() on the decoder thread vs stop() on the UI thread
 
     ~Impl() { close_sections(); }
@@ -88,7 +92,26 @@ struct VirtualCamera::Impl {
             MemoryBarrier();
             header->magic = kMagic;
         }
+        // A writer that died mid-frame leaves a slot odd ("being written"): make every slot even.
+        for (std::uint32_t slot = 0; slot < kSlotCount; ++slot) {
+            if (header->slot_seq[slot] & 1) {
+                header->slot_seq[slot] = header->slot_seq[slot] + 1;
+            }
+        }
+        const std::int64_t latest = header->latest_slot;
+        target.next_slot = latest >= 0 && latest < static_cast<std::int64_t>(kSlotCount)
+                               ? static_cast<std::uint32_t>((latest + 1) % kSlotCount)
+                               : 0;
         return true;
+    }
+
+    bool reader_active() {
+        std::lock_guard publishing(publish_mutex);
+        if (!global.view) {
+            return false;
+        }
+        const std::uint64_t beat = reinterpret_cast<const SectionHeader*>(global.view)->reader_heartbeat_ms;
+        return beat == 0 || GetTickCount64() - beat < kInUseTimeoutMs;  // 0: an older media source
     }
 
     void ensure_sections() {
@@ -109,12 +132,14 @@ struct VirtualCamera::Impl {
             return;
         }
         auto* header = reinterpret_cast<SectionHeader*>(target.view);
-        const auto slot = static_cast<std::uint32_t>((header->latest_slot + 1 + kSlotCount) % kSlotCount);
-        header->slot_seq[slot] = header->slot_seq[slot] + 1;  // odd: being written
+        const std::uint32_t slot = target.next_slot;
+        target.next_slot = (slot + 1) % kSlotCount;
+        const std::int64_t writing = header->slot_seq[slot] | 1;  // odd: being written
+        header->slot_seq[slot] = writing;
         MemoryBarrier();
         std::memcpy(slot_data(target.view, slot), nv12, kFrameSize);
         MemoryBarrier();
-        header->slot_seq[slot] = header->slot_seq[slot] + 1;  // even: complete
+        header->slot_seq[slot] = writing + 1;  // even: complete
         header->latest_slot = slot;
         header->frame_counter = header->frame_counter + 1;
         header->heartbeat_ms = GetTickCount64();
@@ -223,10 +248,12 @@ bool VirtualCamera::start(std::string* error) {
         impl_->owner.join();
         return false;
     }
+    impl_->running = true;
     return true;
 }
 
 void VirtualCamera::stop() {
+    impl_->running = false;
     std::lock_guard publishing(impl_->publish_mutex);
     if (impl_->owner.joinable()) {
         {
@@ -239,9 +266,12 @@ void VirtualCamera::stop() {
     impl_->close_sections();
 }
 
-bool VirtualCamera::running() const { return impl_->owner.joinable(); }
+bool VirtualCamera::running() const { return impl_->running; }
 
-bool VirtualCamera::in_use() const { return impl_->section_open; }
+bool VirtualCamera::in_use() const {
+    // The camera service's media source stamps the header each time it hands a frame to an app.
+    return impl_->section_open && impl_->reader_active();
+}
 
 void VirtualCamera::publish(const std::uint8_t* nv12) {
     std::lock_guard publishing(impl_->publish_mutex);

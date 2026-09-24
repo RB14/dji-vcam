@@ -30,9 +30,8 @@ public:
     bool running() const;
 
     // Publishes one kWidth x kHeight NV12 frame (Y plane followed by the interleaved UV plane).
-    // Frames are dropped until an application opens the camera.
     void publish(const std::uint8_t* nv12);
-    // True while an application has the camera open (its media source is running).
+    // True while an application takes frames from the camera (needs the matching media source).
     bool in_use() const;
 
 private:

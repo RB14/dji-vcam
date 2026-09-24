@@ -22,4 +22,6 @@ private:
 	HANDLE _section = nullptr;
 	void* _view = nullptr;
 	std::vector<BYTE> _last;  // last good frame, repeated while the writer is between frames
+	std::vector<BYTE> _scratch;  // a frame being read; becomes _last if it was not torn
+	bool _writable = false;  // we created the section (camera service): we write reader_heartbeat_ms
 };

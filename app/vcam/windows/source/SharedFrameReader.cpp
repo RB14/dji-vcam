@@ -84,13 +84,14 @@ HRESULT SharedFrameReader::EnsureSection()
 		_section = CreateFileMappingW(INVALID_HANDLE_VALUE, &attributes, PAGE_READWRITE, 0, (DWORD)vc::kSectionSize, vc::kSectionName);
 		auto createError = GetLastError();
 		LocalFree(descriptor);
+		_writable = _section != nullptr;  // our own section: we can report that frames are taken
 		if (!_section)
 			_section = OpenFileMappingW(FILE_MAP_READ, FALSE, vc::kSectionName);
 		if (!_section && failures++ < kMaxLoggedFailures)
 			Log(L"no section yet: session %u, create Global error %u, open error %u (%s)", session, createError, GetLastError(), ProcessName().c_str());
 	}
 	RETURN_LAST_ERROR_IF_NULL(_section);
-	_view = MapViewOfFile(_section, FILE_MAP_READ, 0, 0, vc::kSectionSize);
+	_view = MapViewOfFile(_section, _writable ? FILE_MAP_READ | FILE_MAP_WRITE : FILE_MAP_READ, 0, 0, vc::kSectionSize);
 	RETURN_LAST_ERROR_IF_NULL(_view);
 	Log(L"section mapped: session %u (%s)", session, ProcessName().c_str());
 	return S_OK;
@@ -116,11 +117,11 @@ bool SharedFrameReader::CopyLatest(BYTE* y, LONG pitch)
 		MemoryBarrier();
 		if (!(before & 1))
 		{
-			_last.resize(vc::kFrameSize);
-			memcpy(_last.data(), vc::slot_data(_view, (uint32_t)slot), vc::kFrameSize);
+			_scratch.resize(vc::kFrameSize);
+			memcpy(_scratch.data(), vc::slot_data(_view, (uint32_t)slot), vc::kFrameSize);
 			MemoryBarrier();
-			if (header->slot_seq[slot] != before)
-				_last.clear();  // torn read: fall back below
+			if (header->slot_seq[slot] == before)
+				_last.swap(_scratch);  // a torn read keeps showing the previous frame
 		}
 	}
 	if (_last.size() != vc::kFrameSize)
@@ -147,6 +148,8 @@ HRESULT SharedFrameReader::Fill(IMFSample* sample)
 	RETURN_HR_IF_NULL(E_POINTER, sample);
 	if (!_view)
 		LOG_IF_FAILED(EnsureSection());  // retried on every frame until it works
+	if (_view && _writable)
+		static_cast<vc::SectionHeader*>(_view)->reader_heartbeat_ms = GetTickCount64();
 
 	wil::com_ptr_nothrow<IMFMediaBuffer> buffer;
 	RETURN_IF_FAILED(sample->GetBufferByIndex(0, &buffer));
