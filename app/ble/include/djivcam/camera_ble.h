@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -42,17 +43,19 @@ public:
 
     static bool bluetooth_available();
 
-    // Scans until a DJI camera advertises (preferring `address`, if given) or `timeout` expires.
-    // Cameras only advertise while awake.
-    std::optional<Camera> find_camera(std::chrono::milliseconds timeout, const std::string& address = {});
+    // Scans until a DJI camera advertises (preferring `address`, if given), `timeout` expires or
+    // `stop` is requested. Cameras only advertise while awake.
+    std::optional<Camera> find_camera(std::chrono::milliseconds timeout, const std::string& address = {},
+                                      std::stop_token stop = {});
     bool connect(const Camera& camera);
     bool connected() const;
     void disconnect();
 
     // Pairs using `identifier` (32 hex chars, remembered by the camera once approved). On first use
     // the camera shows a prompt with `token`; `on_approval_needed` is called when that happens.
+    // A stop request ends the wait for the on-camera approval (Failed).
     PairResult pair(const std::string& identifier, const std::string& token, std::chrono::seconds approval_timeout,
-                    const std::function<void()>& on_approval_needed);
+                    const std::function<void()>& on_approval_needed, std::stop_token stop = {});
     // Asks the camera to bring up its Wi-Fi AP and returns the AP credentials.
     std::optional<WifiCredentials> wake_wifi();
     // Keeps the link alive; the camera drops idle BLE links after a few seconds.

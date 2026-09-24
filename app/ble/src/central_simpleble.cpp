@@ -73,9 +73,10 @@ class SimpleBleCentral final : public Central {
 public:
     explicit SimpleBleCentral(SimpleBLE::Adapter adapter) : adapter_(std::move(adapter)) {}
 
-    void scan(std::chrono::milliseconds timeout, const std::function<bool(const Advertisement&)>& on_advertisement) override {
+    void scan(std::chrono::milliseconds timeout, const std::function<bool(const Advertisement&)>& on_advertisement,
+              std::stop_token stop) override {
         std::mutex mutex;
-        std::condition_variable changed;
+        std::condition_variable_any changed;
         bool done = false;
         auto consider = [&](SimpleBLE::Peripheral peripheral) {
             Advertisement seen;
@@ -97,7 +98,7 @@ public:
         adapter_.scan_start();
         {
             std::unique_lock lock(mutex);
-            changed.wait_for(lock, timeout, [&] { return done; });
+            changed.wait_for(lock, stop, timeout, [&] { return done; });
             done = true;
         }
         adapter_.scan_stop();

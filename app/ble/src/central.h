@@ -9,6 +9,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -47,8 +48,10 @@ public:
     static std::unique_ptr<Central> create();
 
     // Reports advertisements (merged per device, so a name from a scan response is kept) until
-    // `on_advertisement` returns true or `timeout` expires.
-    virtual void scan(std::chrono::milliseconds timeout, const std::function<bool(const Advertisement&)>& on_advertisement) = 0;
+    // `on_advertisement` returns true, `timeout` expires or `stop` is requested. A Bluetooth error
+    // ends the scan early (nothing more is reported).
+    virtual void scan(std::chrono::milliseconds timeout, const std::function<bool(const Advertisement&)>& on_advertisement,
+                      std::stop_token stop = {}) = 0;
     // Connects to a device seen while scanning. Null with a reason in `error` on failure.
     virtual std::unique_ptr<GattLink> connect(const std::string& address, std::string* error) = 0;
 };

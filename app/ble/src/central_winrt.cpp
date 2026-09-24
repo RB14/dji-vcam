@@ -262,47 +262,16 @@ private:
 
 class WinrtCentral final : public Central {
 public:
-    void scan(std::chrono::milliseconds timeout, const std::function<bool(const Advertisement&)>& on_advertisement) override {
-        // Shared with the event handler, which may still be running briefly after Stop().
-        struct State {
-            std::mutex mutex;
-            std::condition_variable changed;
-            bool done = false;
-            std::map<std::uint64_t, Advertisement> seen;
-        };
-        auto state = std::make_shared<State>();
+    void scan(std::chrono::milliseconds timeout, const std::function<bool(const Advertisement&)>& on_advertisement,
+              std::stop_token stop) override {
+        auto state = std::make_shared<ScanState>();
         blocking([&] {
-            adv::BluetoothLEAdvertisementWatcher watcher;
-            watcher.ScanningMode(adv::BluetoothLEScanningMode::Active);  // scan responses carry the name
-            const auto token = watcher.Received(
-                [state, &on_advertisement](const adv::BluetoothLEAdvertisementWatcher&,
-                                           const adv::BluetoothLEAdvertisementReceivedEventArgs& args) {
-                    std::lock_guard lock(state->mutex);
-                    if (state->done) {
-                        return;  // scan() may have returned: on_advertisement is gone
-                    }
-                    Advertisement& seen = state->seen[args.BluetoothAddress()];
-                    seen.address = format_address(args.BluetoothAddress());
-                    seen.rssi = args.RawSignalStrengthInDBm();
-                    if (auto name = winrt::to_string(args.Advertisement().LocalName()); !name.empty()) {
-                        seen.name = std::move(name);
-                    }
-                    for (const auto& section : args.Advertisement().ManufacturerData()) {
-                        seen.manufacturer_data[section.CompanyId()] = to_bytes(section.Data());
-                    }
-                    if (on_advertisement(seen)) {
-                        state->done = true;
-                        state->changed.notify_all();
-                    }
-                });
-            watcher.Start();
-            {
-                std::unique_lock lock(state->mutex);
-                state->changed.wait_for(lock, timeout, [&] { return state->done; });
-                state->done = true;
+            try {
+                watch(state, timeout, on_advertisement, stop);
+            } catch (const winrt::hresult_error&) {
+                std::lock_guard lock(state->mutex);
+                state->done = true;  // e.g. Bluetooth turned off: report nothing more
             }
-            watcher.Stop();
-            watcher.Received(token);
         });
     }
 
@@ -321,6 +290,50 @@ public:
                 return nullptr;
             }
         });
+    }
+
+private:
+    // Shared with the event handler, which may still be running briefly after Stop().
+    struct ScanState {
+        std::mutex mutex;
+        std::condition_variable_any changed;
+        bool done = false;
+        std::map<std::uint64_t, Advertisement> seen;
+    };
+
+    static void watch(const std::shared_ptr<ScanState>& state, std::chrono::milliseconds timeout,
+                      const std::function<bool(const Advertisement&)>& on_advertisement, std::stop_token stop) {
+        adv::BluetoothLEAdvertisementWatcher watcher;
+        watcher.ScanningMode(adv::BluetoothLEScanningMode::Active);  // scan responses carry the name
+        const auto token = watcher.Received(
+            [state, &on_advertisement](const adv::BluetoothLEAdvertisementWatcher&,
+                                       const adv::BluetoothLEAdvertisementReceivedEventArgs& args) {
+                std::lock_guard lock(state->mutex);
+                if (state->done) {
+                    return;  // scan() may have returned: on_advertisement is gone
+                }
+                Advertisement& seen = state->seen[args.BluetoothAddress()];
+                seen.address = format_address(args.BluetoothAddress());
+                seen.rssi = args.RawSignalStrengthInDBm();
+                if (auto name = winrt::to_string(args.Advertisement().LocalName()); !name.empty()) {
+                    seen.name = std::move(name);
+                }
+                for (const auto& section : args.Advertisement().ManufacturerData()) {
+                    seen.manufacturer_data[section.CompanyId()] = to_bytes(section.Data());
+                }
+                if (on_advertisement(seen)) {
+                    state->done = true;
+                    state->changed.notify_all();
+                }
+            });
+        watcher.Start();
+        {
+            std::unique_lock lock(state->mutex);
+            state->changed.wait_for(lock, stop, timeout, [&] { return state->done; });
+            state->done = true;
+        }
+        watcher.Stop();
+        watcher.Received(token);
     }
 };
 

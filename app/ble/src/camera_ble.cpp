@@ -58,7 +58,7 @@ struct CameraBle::Impl {
     std::string scanned_address;  // the camera find_camera() returned
 
     std::mutex mutex;
-    std::condition_variable changed;
+    std::condition_variable_any changed;
     duml::StreamParser parser;
     std::vector<duml::Frame> responses;  // unclaimed responses from the camera
     bool approved = false;
@@ -161,7 +161,8 @@ CameraBle::~CameraBle() { disconnect(); }
 
 bool CameraBle::bluetooth_available() { return detail::Central::create() != nullptr; }
 
-std::optional<Camera> CameraBle::find_camera(std::chrono::milliseconds timeout, const std::string& address) {
+std::optional<Camera> CameraBle::find_camera(std::chrono::milliseconds timeout, const std::string& address,
+                                             std::stop_token stop) {
     impl_->central = detail::Central::create();
     if (!impl_->central) {
         impl_->say("Bluetooth is off or there is no Bluetooth adapter");
@@ -187,7 +188,7 @@ std::optional<Camera> CameraBle::find_camera(std::chrono::milliseconds timeout, 
         }
         // The name arrives in a separate scan response: give it a moment.
         return found_preferred && (!found->name.empty() || std::chrono::steady_clock::now() - preferred_since > kNameWait);
-    });
+    }, stop);
     if (found) {
         impl_->scanned_address = found->address;
     }
@@ -230,14 +231,15 @@ void CameraBle::disconnect() {
 }
 
 PairResult CameraBle::pair(const std::string& identifier, const std::string& token,
-                           std::chrono::seconds approval_timeout, const std::function<void()>& on_approval_needed) {
+                           std::chrono::seconds approval_timeout, const std::function<void()>& on_approval_needed,
+                           std::stop_token stop) {
     impl_->send(duml::Frame{duml::kAddrApp, duml::kAddrSession, impl_->next_seq++, duml::kFlagRequest, 0x00, 0x2B,
                             {0x04, 0x00}});  // session open (DJI Mimo sends this first)
     std::this_thread::sleep_for(120ms);
     Bytes payload = duml::pack_string(identifier);
     const Bytes token_bytes = duml::pack_string(token);
     payload.insert(payload.end(), token_bytes.begin(), token_bytes.end());
-    for (int attempt = 0; attempt < 3; ++attempt) {
+    for (int attempt = 0; attempt < 3 && !stop.stop_requested(); ++attempt) {
         const auto reply = impl_->request(duml::kAddrWifi, 0x07, 0x45, payload, 2500ms, kPairingSeq);
         if (!reply || reply->payload.size() < 2) {
             continue;
@@ -250,9 +252,10 @@ PairResult CameraBle::pair(const std::string& identifier, const std::string& tok
                 on_approval_needed();
             }
             std::unique_lock lock(impl_->mutex);
-            return impl_->changed.wait_for(lock, approval_timeout, [this] { return impl_->approved; })
-                       ? PairResult::Approved
-                       : PairResult::TimedOut;
+            if (impl_->changed.wait_for(lock, stop, approval_timeout, [this] { return impl_->approved; })) {
+                return PairResult::Approved;
+            }
+            return stop.stop_requested() ? PairResult::Failed : PairResult::TimedOut;
         }
     }
     return PairResult::Failed;
