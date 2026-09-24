@@ -24,4 +24,5 @@ endif()
 
 add_library(djivcam_media STATIC src/decoder.cpp)
 target_include_directories(djivcam_media PUBLIC include)
+target_compile_definitions(djivcam_media PUBLIC DJIVCAM_HAVE_MEDIA)
 target_link_libraries(djivcam_media PUBLIC ${DJIVCAM_FFMPEG_LIBS})

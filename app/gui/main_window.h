@@ -12,6 +12,7 @@ class QLabel;
 class QSettings;
 class Pipeline;
 class PreviewWidget;
+struct LiveStats;
 
 namespace djivcam::vcam {
 class VirtualCamera;
@@ -25,6 +26,8 @@ public:
     ~MainWindow() override;
 
     void connectCamera();
+    // Plays a recorded H.264 stream instead of connecting to the camera (testing without one).
+    void replayFile(const QString& path);
     // Replaces the stored pairing identifier (e.g. one the camera already approved).
     void importPairingIdentifier(const QString& identifier);
 
@@ -33,7 +36,7 @@ private:
     void onSessionState(const QString& state, const QString& detail);
     void onConnectorStage(CameraConnector::Stage stage, const QString& detail);
     void onWifiReady(const QString& ssid, const QString& password);
-    void onStats(double fps, double kbps, double loss_percent, quint64 recovered, quint64 reconnects);
+    void onStats(const LiveStats& stats);
     void onDecoder(const QString& backend, bool hardware);
     void forgetCamera();
     void showStage(const QString& text, bool attention = false);
@@ -61,5 +64,6 @@ private:
 
     CameraConnector::Stage connector_stage_ = CameraConnector::Stage::Idle;
     bool streaming_ = false;
+    QString replay_file_;  // set: "Connect" replays this file instead
     QElapsedTimer network_missing_;  // how long the session has been waiting for the camera network
 };

@@ -41,7 +41,12 @@ webcam.
    | Configuring the ESP32 bridge | The bridge is told which network to join |
    | Waiting for the camera network | The bridge is joining the camera's Wi-Fi |
    | Connecting to the camera | Starting the video connection |
-   | Streaming | Video is flowing; resolution, fps, bitrate and loss are on the right |
+   | Streaming | Video is flowing; the figures on the right are explained below |
+
+While streaming, the right side of the status bar shows the resolution, frames per second,
+bitrate, **delay** (the longest time a frame spent inside the app in the last second, normally
+10-20 ms), **loss** (video packets that never arrived), **recovered** and **dup** (packets the
+camera sent late or twice) and reconnects.
 
 After the first approval, later connections need no taps. **Options → Connect on startup** makes
 the app connect by itself when it starts.
@@ -83,5 +88,6 @@ To remove the component, run in an administrator prompt:
 | Stuck on "Waiting for the camera network" | Camera Wi-Fi band must be 2.4 GHz; the app re-wakes the camera after 20 s |
 | "No video, reconnecting" | Usually recovers by itself; the camera may be in a menu or playback screen |
 | Occasional noise | Wi-Fi interference on 2.4 GHz; keep the bridge and camera close and away from routers |
+| Seconds of lag, jerky video | If **delay** stays small, the lag builds up on the radio link or in the camera, usually with a high **loss**: move the bridge closer to the camera and away from routers, then Disconnect / Connect |
 | Webcam picture is dark gray | The app is not streaming: connect first. The webcam only exists while the app runs |
 | DJI VCam missing in an app | Check that the status bar says "Webcam: ready"; restart the other app so it lists cameras again |

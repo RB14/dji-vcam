@@ -2,6 +2,8 @@
 //
 // Usage: dji-vcam-cli [--ble] [--seconds N] [--identifier-file PATH] [--dump PATH]
 //        dji-vcam-cli --vcam-test N    publish a test pattern to the DJI VCam webcam for N seconds
+//        dji-vcam-cli --decode-bench FILE [--decoder auto|gpu|cpu]
+//                                      time each per-frame step of the live view on a recorded stream
 //   --ble              wake the camera's Wi-Fi over Bluetooth first and keep the BLE link alive
 //   --identifier-file  file holding the approved pairing identifier (never printed)
 //   --dump             write the received H.264 stream to PATH
@@ -12,6 +14,7 @@
 #include <fstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "djivcam/session.h"
 
@@ -19,14 +22,18 @@
 #include "djivcam/camera_ble.h"
 #endif
 
-#ifdef DJIVCAM_HAVE_VCAM
-#include <vector>
+#ifdef DJIVCAM_HAVE_MEDIA
+#include <iterator>
+#include <numeric>
 
+#include "djivcam/decoder.h"
+#include "djivcam/h264.h"
+#endif
+
+#ifdef DJIVCAM_HAVE_VCAM
 #include "djivcam/vcam_protocol.h"
 #include "djivcam/virtual_camera.h"
 #endif
-
-
 
 namespace {
 
@@ -78,10 +85,87 @@ int run_vcam_test(int seconds) {
 }  // namespace
 #endif
 
+#ifdef DJIVCAM_HAVE_MEDIA
+namespace {
+
+// Per-frame cost of one step, in milliseconds.
+class StepTimer {
+public:
+    explicit StepTimer(std::string name) : name_(std::move(name)) {}
+    template <typename F>
+    auto measure(F&& step) {
+        const auto begin = steady_clock::now();
+        auto result = step();
+        samples_.push_back(duration<double, std::milli>(steady_clock::now() - begin).count());
+        return result;
+    }
+    double mean() const {
+        return samples_.empty() ? 0 : std::accumulate(samples_.begin(), samples_.end(), 0.0) / static_cast<double>(samples_.size());
+    }
+    void report() {
+        if (samples_.empty()) {
+            return;
+        }
+        std::sort(samples_.begin(), samples_.end());
+        char line[160];
+        std::snprintf(line, sizeof(line), "%-26s mean %6.2f ms   p95 %6.2f ms   max %6.2f ms", name_.c_str(), mean(),
+                      samples_[samples_.size() * 95 / 100], samples_.back());
+        say(line);
+    }
+
+private:
+    std::string name_;
+    std::vector<double> samples_;
+};
+
+// Decodes a recorded Annex-B stream as fast as possible and reports what each per-frame step of
+// the live view costs, i.e. how much headroom is left at 30 fps.
+int run_decode_bench(const std::string& path, djivcam::media::DecoderPreference preference) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        say("cannot open " + path);
+        return 1;
+    }
+    const std::vector<std::uint8_t> stream((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<djivcam::h264::AccessUnit> units;
+    djivcam::h264::AccessUnitAssembler assembler([&](djivcam::h264::AccessUnit&& unit) { units.push_back(std::move(unit)); });
+    assembler.push(stream);
+    assembler.flush();
+
+    djivcam::media::H264Decoder decoder(preference);
+    say("decoder: " + decoder.backend() + ", " + std::to_string(units.size()) + " access units");
+    djivcam::media::Nv12Canvas canvas(1280, 720);
+    StepTimer decode("decode + download + BGRA"), webcam("webcam NV12 canvas"), preview("preview image copy");
+    int frames = 0;
+    for (const auto& unit : units) {
+        auto frame = decode.measure([&] { return decoder.decode(unit.data); });
+        if (!frame) {
+            continue;
+        }
+        ++frames;
+        webcam.measure([&] { return canvas.draw(*frame).size(); });
+        preview.measure([&] { return std::vector<std::uint8_t>(frame->pixels).size(); });
+    }
+    say(std::to_string(frames) + " frames");
+    decode.report();
+    webcam.report();
+    preview.report();
+    const double per_frame = decode.mean() + webcam.mean() + preview.mean();
+    char line[120];
+    std::snprintf(line, sizeof(line), "total %.2f ms per frame: up to %.0f fps on the decode thread", per_frame, 1000.0 / per_frame);
+    say(line);
+    return 0;
+}
+
+}  // namespace
+#endif
+
 int main(int argc, char* argv[]) {
     int seconds = 20;
     bool use_ble = false;
     int vcam_test_seconds = 0;
+    std::string bench_file;
+    std::string decoder_choice = "auto";
     std::string identifier_file;
     std::string dump_path;
     for (int i = 1; i < argc; ++i) {
@@ -91,6 +175,10 @@ int main(int argc, char* argv[]) {
             use_ble = true;
         } else if (flag == "--vcam-test" && has_value) {
             vcam_test_seconds = std::stoi(argv[++i]);
+        } else if (flag == "--decode-bench" && has_value) {
+            bench_file = argv[++i];
+        } else if (flag == "--decoder" && has_value) {
+            decoder_choice = argv[++i];
         } else if (flag == "--seconds" && has_value) {
             seconds = std::stoi(argv[++i]);
         } else if (flag == "--identifier-file" && has_value) {
@@ -108,6 +196,18 @@ int main(int argc, char* argv[]) {
         return run_vcam_test(vcam_test_seconds);
 #else
         std::fprintf(stderr, "built without the virtual camera\n");
+        return 2;
+#endif
+    }
+
+    if (!bench_file.empty()) {
+#ifdef DJIVCAM_HAVE_MEDIA
+        using djivcam::media::DecoderPreference;
+        return run_decode_bench(bench_file, decoder_choice == "gpu"   ? DecoderPreference::Hardware
+                                            : decoder_choice == "cpu" ? DecoderPreference::Software
+                                                                      : DecoderPreference::Auto);
+#else
+        std::fprintf(stderr, "built without the video decoder\n");
         return 2;
 #endif
     }

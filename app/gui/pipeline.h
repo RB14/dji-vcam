@@ -1,4 +1,7 @@
 // Live-view pipeline: camera session -> access units -> decoder thread -> frames for the UI.
+//
+// A recorded stream can stand in for the camera (startReplay), which exercises everything after
+// the network (decoding, preview, virtual camera) without a camera.
 #pragma once
 
 #include <QImage>
@@ -7,6 +10,7 @@
 #include <QTimer>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -22,6 +26,17 @@ namespace djivcam::vcam {
 class VirtualCamera;
 }
 
+// Once-a-second figures for the status bar.
+struct LiveStats {
+    double fps = 0;           // decoded frames
+    double kbps = 0;          // H.264 stream
+    double delay_ms = 0;      // worst time a frame spent inside the app (queue + decode + hand-over)
+    double loss_percent = 0;  // video datagrams never received (live only)
+    quint64 recovered = 0;    // gaps filled by late or re-sent datagrams
+    quint64 duplicates = 0;   // datagrams received twice (the camera re-sending)
+    quint64 reconnects = 0;
+};
+
 class Pipeline : public QObject {
     Q_OBJECT
 
@@ -30,8 +45,11 @@ public:
     ~Pipeline() override;
 
     void start(djivcam::SessionConfig config, djivcam::media::DecoderPreference decoder);
+    // Plays a recorded Annex-B H.264 file (e.g. from dji-vcam-cli --dump) in a loop at the camera's
+    // 30 fps instead of connecting to the camera.
+    void startReplay(const QString& path, djivcam::media::DecoderPreference decoder);
     void stop();
-    bool running() const { return session_ != nullptr; }
+    bool running() const { return session_ != nullptr || replay_.joinable(); }
 
     // The most recent decoded frame (null if none). Taking it re-arms frameAvailable().
     QImage takeLatestFrame();
@@ -43,30 +61,41 @@ signals:
     // UI skips frames instead of queueing them (which would add ever-growing latency).
     void frameAvailable();
     void stateChanged(const QString& state, const QString& detail);
-    void statsUpdated(double fps, double kbps, double loss_percent, quint64 recovered, quint64 reconnects);
+    void statsUpdated(const LiveStats& stats);
     // Size of the decoded video (changes e.g. 1280x720 -> 960x720 with the camera's aspect ratio).
     void formatChanged(int width, int height);
     void decoderChanged(const QString& backend, bool hardware);
     void errorOccurred(const QString& message);
 
 private:
+    using Clock = std::chrono::steady_clock;
+    struct QueuedUnit {
+        djivcam::h264::AccessUnit unit;
+        Clock::time_point arrived;
+    };
+
+    void start_decoder(djivcam::media::DecoderPreference decoder);
     void enqueue(djivcam::h264::AccessUnit&& unit);
     void decode_loop(std::stop_token stop, djivcam::media::DecoderPreference preference);
+    void replay_loop(std::stop_token stop, const std::vector<djivcam::h264::AccessUnit>& units);
     void report_stats();
 
     std::unique_ptr<djivcam::LiveViewSession> session_;
     std::unique_ptr<djivcam::h264::AccessUnitAssembler> assembler_;
     std::mutex mutex_;
     std::condition_variable_any wake_;
-    std::deque<djivcam::h264::AccessUnit> queue_;
+    std::deque<QueuedUnit> queue_;
     std::jthread decoder_;
+    std::jthread replay_;
     QTimer stats_timer_;
     std::atomic<std::uint64_t> decoded_frames_{0};
+    std::atomic<std::uint64_t> stream_bytes_{0};
+    std::atomic<std::int64_t> worst_delay_us_{0};  // since the last report
     std::mutex frame_mutex_;
     QImage latest_frame_;
     bool frame_notified_ = false;
     std::uint64_t last_frames_ = 0;
-    std::uint64_t last_video_bytes_ = 0;
+    std::uint64_t last_stream_bytes_ = 0;
     std::uint64_t last_video_datagrams_ = 0;
     std::uint64_t last_lost_ = 0;
     djivcam::vcam::VirtualCamera* virtual_camera_ = nullptr;

@@ -46,6 +46,9 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       settings); compare "delay", "recovered", "dup" and the seconds of lag seen on 2026-09-25
 - [ ] Startup latency: request a keyframe on connect (AppRequestIFrame 0x09/0xA8)
 - [ ] Latency: hand GPU frames to preview / virtual camera without CPU copies
+- [ ] Decode thread headroom: decode to NV12 (no BGRA round trip), draw NV12 in the preview with
+      a shader, and skip the conversions for frames that are already late
+- [ ] After (re)connecting, skip access units until the first keyframe (avoids a few gray frames)
 - [ ] Optional OBS "direct mode" plugin reusing the core
 
 ## Done
@@ -59,3 +62,5 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 - [x] Bluetooth in the app: find, pair, wake Wi-Fi, credentials, keepalive, re-wake; bridge setup
 - [x] Building and installation guides; portable ZIP packaging into `binaries/`
 - [x] Rename of the app code to dji-vcam
+- [x] Diagnostics: replay of recordings in the app, decode benchmark in the CLI, in-app delay and
+      duplicate counters in the status bar

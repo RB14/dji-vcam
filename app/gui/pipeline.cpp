@@ -1,5 +1,8 @@
 #include "pipeline.h"
 
+#include <QFile>
+#include <QFileInfo>
+
 #include <exception>
 #include <optional>
 
@@ -14,6 +17,13 @@ namespace {
 // Access units are never dropped (every P-frame depends on the previous one); this only guards
 // against unbounded growth if decoding ever stalls.
 constexpr std::size_t kMaxQueuedUnits = 120;
+constexpr std::chrono::microseconds kReplayFrameInterval{33'333};  // the live view's 30 fps
+
+// Raises `maximum` to `value` if it is larger (lock-free, from any thread).
+void raise_to(std::atomic<std::int64_t>& maximum, std::int64_t value) {
+    for (auto current = maximum.load(); value > current && !maximum.compare_exchange_weak(current, value);) {
+    }
+}
 
 }  // namespace
 
@@ -26,10 +36,7 @@ Pipeline::~Pipeline() { stop(); }
 
 void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPreference decoder) {
     stop();
-    assembler_ = std::make_unique<djivcam::h264::AccessUnitAssembler>(
-        [this](djivcam::h264::AccessUnit&& unit) { enqueue(std::move(unit)); });
-    decoder_ = std::jthread([this, decoder](std::stop_token stop) { decode_loop(stop, decoder); });
-
+    start_decoder(decoder);
     auto on_video = [this](std::span<const std::uint8_t> bytes) { assembler_->push(bytes); };
     auto on_state = [this](djivcam::SessionState state, const std::string& detail) {
         if (state != djivcam::SessionState::Streaming) {
@@ -39,10 +46,39 @@ void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPrefe
     };
     session_ = std::make_unique<djivcam::LiveViewSession>(std::move(config), on_video, on_state);
     session_->start();
+}
+
+void Pipeline::startReplay(const QString& path, djivcam::media::DecoderPreference decoder) {
+    stop();
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        emit errorOccurred(tr("Cannot open %1").arg(path));
+        return;
+    }
+    const QByteArray stream = file.readAll();
+    auto units = std::make_shared<std::vector<djivcam::h264::AccessUnit>>();
+    djivcam::h264::AccessUnitAssembler splitter([&units](djivcam::h264::AccessUnit&& unit) { units->push_back(std::move(unit)); });
+    splitter.push({reinterpret_cast<const std::uint8_t*>(stream.constData()), static_cast<std::size_t>(stream.size())});
+    splitter.flush();
+    if (units->empty()) {
+        emit errorOccurred(tr("No H.264 video in %1").arg(path));
+        return;
+    }
+    start_decoder(decoder);
+    replay_ = std::jthread([this, units](std::stop_token stop) { replay_loop(stop, *units); });
+    emit stateChanged(QStringLiteral("streaming"), tr("replay of %1").arg(QFileInfo(path).fileName()));
+}
+
+void Pipeline::start_decoder(djivcam::media::DecoderPreference decoder) {
+    assembler_ = std::make_unique<djivcam::h264::AccessUnitAssembler>(
+        [this](djivcam::h264::AccessUnit&& unit) { enqueue(std::move(unit)); });
+    decoder_ = std::jthread([this, decoder](std::stop_token stop) { decode_loop(stop, decoder); });
     decoded_frames_ = 0;
+    stream_bytes_ = 0;
+    worst_delay_us_ = 0;
     width_ = height_ = 0;
     last_frames_ = 0;
-    last_video_bytes_ = 0;
+    last_stream_bytes_ = 0;
     last_video_datagrams_ = 0;
     last_lost_ = 0;
     stats_timer_.start();
@@ -53,6 +89,10 @@ void Pipeline::stop() {
     if (session_) {
         session_->stop();  // joins the session thread: no more callbacks after this
         session_.reset();
+    }
+    if (replay_.joinable()) {
+        replay_.request_stop();
+        replay_.join();
     }
     if (decoder_.joinable()) {
         decoder_.request_stop();
@@ -65,14 +105,33 @@ void Pipeline::stop() {
 }
 
 void Pipeline::enqueue(djivcam::h264::AccessUnit&& unit) {
+    stream_bytes_ += unit.data.size();
     {
         std::lock_guard lock(mutex_);
         if (queue_.size() >= kMaxQueuedUnits) {
             queue_.clear();  // hopelessly behind: resync on the next keyframe
         }
-        queue_.push_back(std::move(unit));
+        queue_.push_back({std::move(unit), Clock::now()});
     }
     wake_.notify_one();
+}
+
+void Pipeline::replay_loop(std::stop_token stop, const std::vector<djivcam::h264::AccessUnit>& units) {
+    std::mutex sleep_mutex;
+    std::condition_variable_any sleeper;
+    auto next = Clock::now();
+    while (!stop.stop_requested()) {
+        for (const auto& unit : units) {
+            next += kReplayFrameInterval;
+            std::unique_lock lock(sleep_mutex);
+            sleeper.wait_until(lock, stop, next, [] { return false; });  // sleeps until `next` or stop
+            if (stop.stop_requested()) {
+                return;
+            }
+            auto copy = unit;
+            enqueue(std::move(copy));
+        }
+    }
 }
 
 void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreference preference) {
@@ -89,16 +148,16 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
 #endif
 
     while (!stop.stop_requested()) {
-        djivcam::h264::AccessUnit unit;
+        QueuedUnit queued;
         {
             std::unique_lock lock(mutex_);
             if (!wake_.wait(lock, stop, [this] { return !queue_.empty(); })) {
                 return;
             }
-            unit = std::move(queue_.front());
+            queued = std::move(queue_.front());
             queue_.pop_front();
         }
-        if (auto frame = decoder->decode(unit.data)) {
+        if (auto frame = decoder->decode(queued.unit.data)) {
             ++decoded_frames_;
             if (frame->width != width_ || frame->height != height_) {
                 width_ = frame->width;
@@ -124,6 +183,7 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
             if (notify) {
                 emit frameAvailable();
             }
+            raise_to(worst_delay_us_, std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - queued.arrived).count());
         }
     }
 }
@@ -135,19 +195,24 @@ QImage Pipeline::takeLatestFrame() {
 }
 
 void Pipeline::report_stats() {
-    if (!session_) {
-        return;
-    }
-    const auto stats = session_->stats();
+    LiveStats out;
     const std::uint64_t frames = decoded_frames_;
-    const double fps = static_cast<double>(frames - last_frames_);
-    const double kbps = static_cast<double>(stats.video_bytes - last_video_bytes_) * 8.0 / 1000.0;
-    const auto received = stats.video_datagrams - last_video_datagrams_;
-    const auto lost = stats.lost - last_lost_;
-    const double loss_percent = received + lost ? 100.0 * static_cast<double>(lost) / static_cast<double>(received + lost) : 0.0;
+    const std::uint64_t bytes = stream_bytes_;
+    out.fps = static_cast<double>(frames - last_frames_);
+    out.kbps = static_cast<double>(bytes - last_stream_bytes_) * 8.0 / 1000.0;
+    out.delay_ms = static_cast<double>(worst_delay_us_.exchange(0)) / 1000.0;
     last_frames_ = frames;
-    last_video_bytes_ = stats.video_bytes;
-    last_video_datagrams_ = stats.video_datagrams;
-    last_lost_ = stats.lost;
-    emit statsUpdated(fps, kbps, loss_percent, stats.recovered, stats.reconnects);
+    last_stream_bytes_ = bytes;
+    if (session_) {
+        const auto stats = session_->stats();
+        const auto received = stats.video_datagrams - last_video_datagrams_;
+        const auto lost = stats.lost - last_lost_;
+        out.loss_percent = received + lost ? 100.0 * static_cast<double>(lost) / static_cast<double>(received + lost) : 0.0;
+        out.recovered = stats.recovered;
+        out.duplicates = stats.duplicates;
+        out.reconnects = stats.reconnects;
+        last_video_datagrams_ = stats.video_datagrams;
+        last_lost_ = stats.lost;
+    }
+    emit statsUpdated(out);
 }

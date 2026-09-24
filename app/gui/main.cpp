@@ -17,6 +17,12 @@ int main(int argc, char* argv[]) {
         QStringLiteral("identifier"),
         QStringLiteral("Import a pairing identifier the camera has already approved (32 hex chars)."), QStringLiteral("id"));
     parser.addOption(identifier_option);
+    const QCommandLineOption replay_option(
+        QStringLiteral("replay"),
+        QStringLiteral("Play a recorded H.264 stream (dji-vcam-cli --dump) instead of the camera, e.g. to test the "
+                       "virtual camera."),
+        QStringLiteral("file"));
+    parser.addOption(replay_option);
     parser.process(app);
 
     MainWindow window;
@@ -24,7 +30,9 @@ int main(int argc, char* argv[]) {
         window.importPairingIdentifier(parser.value(identifier_option));
     }
     window.show();
-    if (parser.isSet(connect_option)) {
+    if (parser.isSet(replay_option)) {
+        window.replayFile(parser.value(replay_option));
+    } else if (parser.isSet(connect_option)) {
         window.connectCamera();
     }
     return QApplication::exec();

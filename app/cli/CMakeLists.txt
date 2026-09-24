@@ -6,3 +6,11 @@ endif()
 if(TARGET djivcam_vcam)
     target_link_libraries(dji-vcam-cli PRIVATE djivcam_vcam)
 endif()
+if(TARGET djivcam_media)
+    target_link_libraries(dji-vcam-cli PRIVATE djivcam_media)
+    if(WIN32)
+        add_custom_command(TARGET dji-vcam-cli POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:dji-vcam-cli> $<TARGET_FILE_DIR:dji-vcam-cli>
+            COMMAND_EXPAND_LISTS)
+    endif()
+endif()

@@ -17,6 +17,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFileInfo>
 
 #include <chrono>
 
@@ -222,6 +223,12 @@ MainWindow::~MainWindow() {
 
 void MainWindow::connectCamera() { connect_action_->setChecked(true); }
 
+void MainWindow::replayFile(const QString& path) {
+    replay_file_ = path;
+    camera_label_->setText(tr("Replay: %1").arg(QFileInfo(path).fileName()));
+    connectCamera();
+}
+
 void MainWindow::importPairingIdentifier(const QString& identifier) { settings_->setValue(kIdentifierKey, identifier); }
 
 QString MainWindow::pairingIdentifier() {
@@ -255,13 +262,18 @@ void MainWindow::toggleConnection(bool connect) {
         decoder_label_->clear();
         return;
     }
+    const auto decoder = static_cast<DecoderPreference>(decoder_choice_->currentData().toInt());
+    if (!replay_file_.isEmpty()) {
+        pipeline_->startReplay(replay_file_, decoder);
+        return;
+    }
     // The session waits for the camera network by itself; Bluetooth (if enabled) brings it up.
     djivcam::SessionConfig config;
     config.identifier = pairingIdentifier().toStdString();
     config.token = kPairingToken.toStdString();
     config.gap_timeout = std::chrono::milliseconds(settings_->value(kGapWaitKey, 0).toInt());
     network_missing_.invalidate();
-    pipeline_->start(config, static_cast<DecoderPreference>(decoder_choice_->currentData().toInt()));
+    pipeline_->start(config, decoder);
     if (bluetooth_action_->isChecked()) {
         if (CameraConnector::bluetoothAvailable()) {
             connector_->start(pairingIdentifier(), kPairingToken, settings_->value(kAddressKey).toString());
@@ -315,22 +327,26 @@ void MainWindow::onSessionState(const QString& state, const QString& detail) {
     if (state == QLatin1String("connecting")) {
         showStage(tr("Connecting to the camera%1").arg(detail.isEmpty() ? QString() : " (" + detail + ")"));
     } else if (streaming_) {
-        showStage(tr("Streaming"));
+        showStage(detail.isEmpty() ? tr("Streaming") : tr("Streaming (%1)").arg(detail));
     }
 }
 
-void MainWindow::onStats(double fps, double kbps, double loss_percent, quint64 recovered, quint64 reconnects) {
+void MainWindow::onStats(const LiveStats& stats) {
     if (!streaming_ && network_missing_.isValid() && network_missing_.elapsed() > kRewakeAfterMs &&
         connector_stage_ == Stage::WifiReady) {
         connector_->wakeAgain();  // the camera's access point went away
         network_missing_.restart();
     }
-    stats_label_->setText(tr("%1 fps  |  %2 kbit/s  |  loss %3%  |  %4 recovered  |  %5 reconnects")
-                              .arg(fps, 0, 'f', 0)
-                              .arg(kbps, 0, 'f', 0)
-                              .arg(loss_percent, 0, 'f', 2)
-                              .arg(recovered)
-                              .arg(reconnects));
+    // "delay" is the app's own share of the latency; seconds of lag with a small delay here come
+    // from the camera or the radio link.
+    stats_label_->setText(tr("%1 fps  |  %2 kbit/s  |  delay %3 ms  |  loss %4%  |  %5 recovered  |  %6 dup  |  %7 reconnects")
+                              .arg(stats.fps, 0, 'f', 0)
+                              .arg(stats.kbps, 0, 'f', 0)
+                              .arg(stats.delay_ms, 0, 'f', 0)
+                              .arg(stats.loss_percent, 0, 'f', 2)
+                              .arg(stats.recovered)
+                              .arg(stats.duplicates)
+                              .arg(stats.reconnects));
 }
 
 void MainWindow::onDecoder(const QString& backend, bool hardware) {
