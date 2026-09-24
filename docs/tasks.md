@@ -41,7 +41,9 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 - [ ] Linux: v4l2loopback virtual camera, BlueZ, NetworkManager link; test on a real Linux machine
 - [ ] Wi-Fi adapter link: detect a second adapter, join the camera AP on it, keep internet routing
 - [ ] 1080p30: try the camera's RTMP mode (proven 1080p) received by the app
-- [ ] Noise: confirm whether the camera re-sends lost datagrams (watch "recovered" counts)
+- [ ] Loss and re-sends: A/B test with the camera on a lossy link, the default (ACK the newest
+      datagram at once) against waiting for re-sends (`video/gapWaitMs` = 50 in the app's
+      settings); compare "delay", "recovered", "dup" and the seconds of lag seen on 2026-09-25
 - [ ] Startup latency: request a keyframe on connect (AppRequestIFrame 0x09/0xA8)
 - [ ] Latency: hand GPU frames to preview / virtual camera without CPU copies
 - [ ] Optional OBS "direct mode" plugin reusing the core

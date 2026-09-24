@@ -37,7 +37,10 @@ struct SessionConfig {
     // abandoned session): reconnect with a fresh handshake.
     std::chrono::milliseconds video_timeout{3000};
     // How long to wait for a missing video datagram (re-sent by the camera) before skipping it.
-    std::chrono::milliseconds gap_timeout{50};
+    // While waiting, the video ACK stays at the gap, which holds back the camera's send window.
+    // 0 acknowledges the newest datagram right away, as the Python tools do (measured ~135 ms
+    // glass to glass); no live run has seen a gap filled within 50 ms yet.
+    std::chrono::milliseconds gap_timeout{0};
 };
 
 struct SessionStats {

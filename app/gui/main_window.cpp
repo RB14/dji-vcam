@@ -18,6 +18,8 @@
 #include <QCoreApplication>
 #include <QDir>
 
+#include <chrono>
+
 #include "bridge_link.h"
 #include "djivcam/camera_ble.h"
 #include "pipeline.h"
@@ -39,6 +41,8 @@ const QString kBridgeKey = QStringLiteral("connect/configureBridge");
 const QString kStartupKey = QStringLiteral("connect/onStartup");
 const QString kDecoderKey = QStringLiteral("video/decoder");
 const QString kVirtualCameraKey = QStringLiteral("vcam/enabled");
+// Advanced, no UI: how long to wait for a missing video datagram before skipping it (ms, 0 = never).
+const QString kGapWaitKey = QStringLiteral("video/gapWaitMs");
 const QString kPairingToken = QStringLiteral("obsd");  // shown on the camera's approval prompt
 constexpr qint64 kRewakeAfterMs = 20000;                // camera network gone this long: wake again
 
@@ -255,6 +259,7 @@ void MainWindow::toggleConnection(bool connect) {
     djivcam::SessionConfig config;
     config.identifier = pairingIdentifier().toStdString();
     config.token = kPairingToken.toStdString();
+    config.gap_timeout = std::chrono::milliseconds(settings_->value(kGapWaitKey, 0).toInt());
     network_missing_.invalidate();
     pipeline_->start(config, static_cast<DecoderPreference>(decoder_choice_->currentData().toInt()));
     if (bluetooth_action_->isChecked()) {
