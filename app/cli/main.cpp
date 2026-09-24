@@ -140,7 +140,7 @@ int run_decode_bench(const std::string& path, djivcam::media::DecoderPreference 
     djivcam::media::H264Decoder decoder(preference);
     say("decoder: " + decoder.backend() + ", " + std::to_string(units.size()) + " access units");
     djivcam::media::Nv12Canvas canvas(1280, 720);
-    StepTimer decode("decode + download + BGRA"), webcam("webcam NV12 canvas"), preview("preview image copy");
+    StepTimer decode("decode + download (NV12)"), webcam("webcam NV12 canvas");
     int frames = 0;
     for (const auto& unit : units) {
         auto frame = decode.measure([&] { return decoder.decode(unit.data); });
@@ -148,14 +148,12 @@ int run_decode_bench(const std::string& path, djivcam::media::DecoderPreference 
             continue;
         }
         ++frames;
-        webcam.measure([&] { return canvas.draw(*frame).size(); });
-        preview.measure([&] { return std::vector<std::uint8_t>(frame->pixels).size(); });
+        webcam.measure([&] { return canvas.draw(*frame); });
     }
     say(std::to_string(frames) + " frames");
     decode.report();
     webcam.report();
-    preview.report();
-    const double per_frame = decode.mean() + webcam.mean() + preview.mean();
+    const double per_frame = decode.mean() + webcam.mean();
     char line[120];
     std::snprintf(line, sizeof(line), "total %.2f ms per frame: up to %.0f fps on the decode thread", per_frame, 1000.0 / per_frame);
     say(line);

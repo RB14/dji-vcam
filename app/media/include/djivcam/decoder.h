@@ -10,12 +10,15 @@
 
 namespace djivcam::media {
 
-// A decoded picture in 32-bit BGRA (the memory layout of Qt's QImage::Format_RGB32).
-struct BgraFrame {
+// A decoded picture in NV12, the GPU decoders' native format: the Y plane (width x height)
+// followed by the interleaved UV plane (width x height / 2), rows packed (stride = width).
+struct Nv12Frame {
     int width = 0;
     int height = 0;
-    int stride = 0;
-    std::vector<std::uint8_t> pixels;
+    std::vector<std::uint8_t> data;
+    // How the stream says to turn it into RGB (the camera: BT.709, video range).
+    bool bt709 = true;        // else BT.601
+    bool full_range = false;  // 0-255 instead of 16-235 luma
 };
 
 enum class DecoderPreference {
@@ -37,7 +40,7 @@ public:
     H264Decoder& operator=(const H264Decoder&) = delete;
 
     // Returns the picture this access unit completes, if any. Corrupt units are skipped.
-    std::optional<BgraFrame> decode(std::span<const std::uint8_t> access_unit);
+    std::optional<Nv12Frame> decode(std::span<const std::uint8_t> access_unit);
 
     // "d3d11va", "vaapi", ... or "software".
     const std::string& backend() const;
@@ -48,8 +51,9 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-// Draws frames into a fixed-size NV12 canvas, scaled to fit and letterboxed (black bars) when the
-// aspect ratio differs, e.g. 960x720 (4:3) into the virtual camera's 1280x720.
+// Fits frames into a fixed-size NV12 picture (the virtual camera's 1280x720), centered with black
+// bars when the aspect ratio differs (960x720 from a 4:3 live view) and scaled down only when a
+// frame is larger.
 class Nv12Canvas {
 public:
     Nv12Canvas(int width, int height);
@@ -57,8 +61,9 @@ public:
     Nv12Canvas(const Nv12Canvas&) = delete;
     Nv12Canvas& operator=(const Nv12Canvas&) = delete;
 
-    // Returns the canvas: Y plane (width x height) followed by the interleaved UV plane.
-    const std::vector<std::uint8_t>& draw(const BgraFrame& frame);
+    // Returns the picture to publish (Y plane, then the interleaved UV plane): the frame's own data
+    // when it already has the canvas size, otherwise the canvas.
+    const std::uint8_t* draw(const Nv12Frame& frame);
 
 private:
     struct Impl;

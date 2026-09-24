@@ -1,6 +1,7 @@
 #include "djivcam/decoder.h"
 
 #include <algorithm>
+#include <cstring>
 #include <stdexcept>
 
 extern "C" {
@@ -104,17 +105,31 @@ struct H264Decoder::Impl {
         return packet && frame && downloaded;
     }
 
-    BgraFrame to_bgra(const AVFrame& picture) {
-        scaler = sws_getCachedContext(scaler, picture.width, picture.height,
-                                      static_cast<AVPixelFormat>(picture.format), picture.width, picture.height,
-                                      AV_PIX_FMT_BGRA, SWS_POINT, nullptr, nullptr, nullptr);
-        BgraFrame out;
+    // Packs the picture into an Nv12Frame: a plain copy for GPU surfaces (already NV12), an
+    // unscaled repack (no color conversion) for the software decoder's planar YUV.
+    Nv12Frame to_nv12(const AVFrame& picture) {
+        Nv12Frame out;
         out.width = picture.width;
         out.height = picture.height;
-        out.stride = picture.width * 4;
-        out.pixels.resize(static_cast<std::size_t>(out.stride) * static_cast<std::size_t>(out.height));
-        std::uint8_t* planes[4] = {out.pixels.data(), nullptr, nullptr, nullptr};
-        const int strides[4] = {out.stride, 0, 0, 0};
+        out.bt709 = picture.colorspace == AVCOL_SPC_BT709 ||
+                    (picture.colorspace == AVCOL_SPC_UNSPECIFIED && picture.height >= 720);  // HD default
+        out.full_range = picture.color_range == AVCOL_RANGE_JPEG || picture.format == AV_PIX_FMT_YUVJ420P;
+        const std::size_t width = static_cast<std::size_t>(picture.width);
+        const std::size_t luma = width * static_cast<std::size_t>(picture.height);
+        out.data.resize(luma + luma / 2);
+        std::uint8_t* planes[4] = {out.data.data(), out.data.data() + luma, nullptr, nullptr};
+        if (picture.format == AV_PIX_FMT_NV12) {
+            for (int row = 0; row < picture.height; ++row) {
+                std::memcpy(planes[0] + width * row, picture.data[0] + static_cast<std::ptrdiff_t>(picture.linesize[0]) * row, width);
+            }
+            for (int row = 0; row < picture.height / 2; ++row) {
+                std::memcpy(planes[1] + width * row, picture.data[1] + static_cast<std::ptrdiff_t>(picture.linesize[1]) * row, width);
+            }
+            return out;
+        }
+        scaler = sws_getCachedContext(scaler, picture.width, picture.height, static_cast<AVPixelFormat>(picture.format),
+                                      picture.width, picture.height, AV_PIX_FMT_NV12, SWS_POINT, nullptr, nullptr, nullptr);
+        const int strides[4] = {picture.width, picture.width, 0, 0};
         sws_scale(scaler, picture.data, picture.linesize, 0, picture.height, planes, strides);
         return out;
     }
@@ -148,7 +163,7 @@ const std::string& H264Decoder::backend() const { return impl_->backend; }
 
 bool H264Decoder::hardware() const { return impl_->device != nullptr; }
 
-std::optional<BgraFrame> H264Decoder::decode(std::span<const std::uint8_t> access_unit) {
+std::optional<Nv12Frame> H264Decoder::decode(std::span<const std::uint8_t> access_unit) {
     Impl& d = *impl_;
     d.input.assign(access_unit.begin(), access_unit.end());
     d.input.resize(access_unit.size() + AV_INPUT_BUFFER_PADDING_SIZE, 0);
@@ -157,7 +172,7 @@ std::optional<BgraFrame> H264Decoder::decode(std::span<const std::uint8_t> acces
     if (avcodec_send_packet(d.context, d.packet) < 0) {
         return std::nullopt;
     }
-    std::optional<BgraFrame> latest;
+    std::optional<Nv12Frame> latest;
     while (avcodec_receive_frame(d.context, d.frame) == 0) {
         const AVFrame* picture = d.frame;
         if (d.frame->format == d.hw_format && d.hw_format != AV_PIX_FMT_NONE) {
@@ -168,7 +183,7 @@ std::optional<BgraFrame> H264Decoder::decode(std::span<const std::uint8_t> acces
             }
             picture = d.downloaded;
         }
-        latest = d.to_bgra(*picture);
+        latest = d.to_nv12(*picture);
         av_frame_unref(d.downloaded);
         av_frame_unref(d.frame);
     }
@@ -201,13 +216,17 @@ Nv12Canvas::Nv12Canvas(int width, int height) : impl_(std::make_unique<Impl>()) 
 
 Nv12Canvas::~Nv12Canvas() = default;
 
-const std::vector<std::uint8_t>& Nv12Canvas::draw(const BgraFrame& frame) {
+const std::uint8_t* Nv12Canvas::draw(const Nv12Frame& frame) {
     Impl& d = *impl_;
-    if (frame.width <= 0 || frame.height <= 0) {
-        return d.canvas;
+    if (frame.width == d.width && frame.height == d.height) {
+        return frame.data.data();
     }
-    // Fit inside the canvas keeping the aspect ratio; NV12 needs even sizes and offsets.
-    const double scale = std::min(static_cast<double>(d.width) / frame.width, static_cast<double>(d.height) / frame.height);
+    if (frame.width <= 0 || frame.height <= 0) {
+        return d.canvas.data();
+    }
+    // Keep the aspect ratio, shrink only if needed; NV12 needs even sizes and offsets.
+    const bool fits = frame.width <= d.width && frame.height <= d.height;
+    const double scale = fits ? 1.0 : std::min(static_cast<double>(d.width) / frame.width, static_cast<double>(d.height) / frame.height);
     const int fitted_width = std::min(d.width, static_cast<int>(frame.width * scale) & ~1);
     const int fitted_height = std::min(d.height, static_cast<int>(frame.height * scale) & ~1);
     const int left = ((d.width - fitted_width) / 2) & ~1;
@@ -217,17 +236,28 @@ const std::vector<std::uint8_t>& Nv12Canvas::draw(const BgraFrame& frame) {
         d.source_height = frame.height;
         d.clear();  // new geometry: repaint the bars
     }
-    d.scaler = sws_getCachedContext(d.scaler, frame.width, frame.height, AV_PIX_FMT_BGRA, fitted_width, fitted_height,
+    const std::size_t canvas_width = static_cast<std::size_t>(d.width);
+    std::uint8_t* luma = d.canvas.data() + static_cast<std::size_t>(top) * canvas_width + left;
+    std::uint8_t* chroma = d.canvas.data() + canvas_width * d.height + static_cast<std::size_t>(top / 2) * canvas_width + left;
+    const std::uint8_t* source_luma = frame.data.data();
+    const std::uint8_t* source_chroma = source_luma + static_cast<std::size_t>(frame.width) * frame.height;
+    if (fits) {
+        for (int row = 0; row < fitted_height; ++row) {
+            std::memcpy(luma + canvas_width * row, source_luma + static_cast<std::size_t>(frame.width) * row, static_cast<std::size_t>(fitted_width));
+        }
+        for (int row = 0; row < fitted_height / 2; ++row) {
+            std::memcpy(chroma + canvas_width * row, source_chroma + static_cast<std::size_t>(frame.width) * row, static_cast<std::size_t>(fitted_width));
+        }
+        return d.canvas.data();
+    }
+    d.scaler = sws_getCachedContext(d.scaler, frame.width, frame.height, AV_PIX_FMT_NV12, fitted_width, fitted_height,
                                     AV_PIX_FMT_NV12, SWS_BILINEAR, nullptr, nullptr, nullptr);
-    const std::size_t luma = static_cast<std::size_t>(d.width) * static_cast<std::size_t>(d.height);
-    std::uint8_t* planes[4] = {
-        d.canvas.data() + static_cast<std::size_t>(top) * d.width + left,
-        d.canvas.data() + luma + static_cast<std::size_t>(top / 2) * d.width + left, nullptr, nullptr};
+    const std::uint8_t* source[4] = {source_luma, source_chroma, nullptr, nullptr};
+    const int source_strides[4] = {frame.width, frame.width, 0, 0};
+    std::uint8_t* planes[4] = {luma, chroma, nullptr, nullptr};
     const int strides[4] = {d.width, d.width, 0, 0};
-    const std::uint8_t* source[4] = {frame.pixels.data(), nullptr, nullptr, nullptr};
-    const int source_strides[4] = {frame.stride, 0, 0, 0};
     sws_scale(d.scaler, source, source_strides, 0, frame.height, planes, strides);
-    return d.canvas;
+    return d.canvas.data();
 }
 
 }  // namespace djivcam::media

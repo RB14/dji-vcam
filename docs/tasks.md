@@ -49,8 +49,6 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       settings); compare "delay", "recovered", "dup" and the seconds of lag seen on 2026-09-25
 - [ ] Startup latency: request a keyframe on connect (AppRequestIFrame 0x09/0xA8)
 - [ ] Latency: hand GPU frames to preview / virtual camera without CPU copies
-- [ ] Decode thread headroom: decode to NV12 (no BGRA round trip), draw NV12 in the preview with
-      a shader, and skip the conversions for frames that are already late
 - [ ] After (re)connecting, skip access units until the first keyframe (avoids a few gray frames)
 - [ ] Optional OBS "direct mode" plugin reusing the core
 
@@ -67,3 +65,5 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 - [x] Rename of the app code to dji-vcam
 - [x] Diagnostics: replay of recordings in the app, decode benchmark in the CLI, in-app delay and
       duplicate counters in the status bar
+- [x] NV12 end to end with GPU color conversion in the preview (decode thread 6.9 -> 2.8 ms per
+      frame; fixes BT.601 colors on the camera's BT.709 stream)

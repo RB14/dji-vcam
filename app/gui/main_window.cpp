@@ -116,8 +116,8 @@ MainWindow::MainWindow(QWidget* parent)
 
     connect(connect_action_, &QAction::toggled, this, &MainWindow::toggleConnection);
     connect(pipeline_, &Pipeline::frameAvailable, this, [this] {
-        if (QImage frame = pipeline_->takeLatestFrame(); !frame.isNull()) {
-            preview_->showFrame(frame);
+        if (auto frame = pipeline_->takeLatestFrame()) {
+            preview_->showFrame(std::move(frame));
         }
     });
     connect(pipeline_, &Pipeline::stateChanged, this, &MainWindow::onSessionState);

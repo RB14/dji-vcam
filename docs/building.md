@@ -96,7 +96,7 @@ The version comes from `project(dji-vcam VERSION ...)` in `app/CMakeLists.txt`.
   `dji-vcam-cli --dump FILE` or `./obs-dji.sh live` (`captures/liveview-*.bin`).
 - `dji-vcam-cli --decode-bench FILE [--decoder auto|gpu|cpu]` decodes a recording as fast as
   possible and prints the cost of each per-frame step; the live view needs under 33 ms per frame.
-  On the development laptop (Intel iGPU) a real recording takes about 7 ms (D3D11VA or CPU).
+  On the development laptop (Intel iGPU) a real recording takes about 3 ms (D3D11VA or CPU).
 
 ### Experimenting with camera commands
 

@@ -1,23 +1,43 @@
-// Shows the latest live-view frame, letterboxed to keep its aspect ratio. Drawn through OpenGL,
-// so scaling the frame to the window (and high-DPI screens) happens on the GPU.
+// Shows the latest live-view frame, letterboxed to keep its aspect ratio. The decoder's NV12
+// frame goes to the GPU as is (a luma and a chroma texture) and a shader turns it into RGB while
+// drawing, so neither the color conversion nor the scaling to the window costs CPU time.
 #pragma once
 
-#include <QImage>
+#include <QOpenGLBuffer>
+#include <QOpenGLFunctions>
+#include <QOpenGLShaderProgram>
 #include <QOpenGLWidget>
 
-class PreviewWidget : public QOpenGLWidget {
+#include <memory>
+
+#include "djivcam/decoder.h"
+
+class PreviewWidget : public QOpenGLWidget, protected QOpenGLFunctions {
     Q_OBJECT
 
 public:
-    explicit PreviewWidget(QWidget* parent = nullptr);
+    using Frame = std::shared_ptr<const djivcam::media::Nv12Frame>;
 
-public slots:
-    void showFrame(const QImage& frame);
+    explicit PreviewWidget(QWidget* parent = nullptr);
+    ~PreviewWidget() override;
+
+    void showFrame(Frame frame);
     void clear();
 
 protected:
-    void paintEvent(QPaintEvent* event) override;
+    void initializeGL() override;
+    void paintGL() override;
 
 private:
-    QImage frame_;
+    void upload();
+    void release_gl();
+
+    Frame frame_;
+    bool uploaded_ = false;  // frame_ is in the textures
+    QOpenGLShaderProgram program_;
+    QOpenGLBuffer quad_{QOpenGLBuffer::VertexBuffer};
+    GLuint textures_[2] = {0, 0};  // luma (width x height), chroma (width/2 x height/2, 2 channels)
+    int texture_width_ = 0;
+    int texture_height_ = 0;
+    bool luminance_textures_ = false;  // OpenGL (ES) 2 has no one/two-channel formats
 };

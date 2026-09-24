@@ -28,7 +28,7 @@ app/
     session         state machine: wait for route -> poke -> handshake -> register ->
                     live-view trigger -> heartbeat/ACK loop -> reconnect on silence
     h264            reassembles video datagrams into access units, drops DJI's 0xFF units
-    decoder         FFmpeg decode (low-delay flags; hardware decode later)
+    decoder         FFmpeg decode (low-delay flags, GPU first) to NV12 frames
     ble             pairing (one on-camera approval), AP wake, AP credentials
     link            how the host reaches 192.168.2.1:
                       bridge   - ESP32-S3 USB NCM bridge (credentials over its console)
@@ -46,8 +46,11 @@ app/
   tests/
 ```
 
-Threads: a session thread (UDP receive loop + timers), a decode thread, and a frame bus that
-fans decoded frames out to the preview and the virtual camera.
+Threads: a session thread (UDP receive loop + timers) and a decode thread, which hands each NV12
+frame to the virtual camera (as is, or letterboxed into 1280x720) and, shared and unchanged, to
+the preview. The preview uploads the Y and UV planes as two textures and converts them to RGB in
+a shader (BT.709 or BT.601, video or full range, as the stream signals), so the CPU neither
+converts colors nor scales. About 3 ms of CPU per frame on an Intel iGPU laptop.
 
 ## Milestones
 

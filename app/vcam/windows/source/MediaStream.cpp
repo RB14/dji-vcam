@@ -35,6 +35,11 @@ HRESULT MediaStream::Initialize(IMFMediaSource* source, int index)
 	MFSetAttributeRatio(nv12Type.get(), MF_MT_FRAME_RATE, vc::kFrameRate, 1);
 	nv12Type->SetUINT32(MF_MT_AVG_BITRATE, (UINT32)(vc::kFrameSize * 8 * vc::kFrameRate));
 	MFSetAttributeRatio(nv12Type.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
+	// The app publishes the camera's own NV12 unchanged: BT.709 colors, video (16-235) range.
+	nv12Type->SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709);
+	nv12Type->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235);
+	nv12Type->SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709);
+	nv12Type->SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709);
 	types[0] = nv12Type.detach();
 
 	RETURN_IF_FAILED_MSG(MFCreateStreamDescriptor(_index, (DWORD)types.size(), types.get(), &_descriptor), "MFCreateStreamDescriptor failed");

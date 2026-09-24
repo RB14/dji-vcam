@@ -4,7 +4,6 @@
 // the network (decoding, preview, virtual camera) without a camera.
 #pragma once
 
-#include <QImage>
 #include <QObject>
 #include <QString>
 #include <QTimer>
@@ -51,8 +50,10 @@ public:
     void stop();
     bool running() const { return session_ != nullptr || replay_.joinable(); }
 
+    using Frame = std::shared_ptr<const djivcam::media::Nv12Frame>;
+
     // The most recent decoded frame (null if none). Taking it re-arms frameAvailable().
-    QImage takeLatestFrame();
+    Frame takeLatestFrame();
     // Decoded frames are also published to this virtual camera (may be null). Set while stopped.
     void setVirtualCamera(djivcam::vcam::VirtualCamera* camera) { virtual_camera_ = camera; }
 
@@ -92,7 +93,7 @@ private:
     std::atomic<std::uint64_t> stream_bytes_{0};
     std::atomic<std::int64_t> worst_delay_us_{0};  // since the last report
     std::mutex frame_mutex_;
-    QImage latest_frame_;
+    Frame latest_frame_;
     bool frame_notified_ = false;
     std::uint64_t last_frames_ = 0;
     std::uint64_t last_stream_bytes_ = 0;

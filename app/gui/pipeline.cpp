@@ -157,7 +157,8 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
             queued = std::move(queue_.front());
             queue_.pop_front();
         }
-        if (auto frame = decoder->decode(queued.unit.data)) {
+        if (auto decoded = decoder->decode(queued.unit.data)) {
+            const Frame frame = std::make_shared<const djivcam::media::Nv12Frame>(std::move(*decoded));
             ++decoded_frames_;
             if (frame->width != width_ || frame->height != height_) {
                 width_ = frame->width;
@@ -169,14 +170,13 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
                 if (!canvas) {
                     canvas.emplace(djivcam::vcam::kWidth, djivcam::vcam::kHeight);
                 }
-                virtual_camera_->publish(canvas->draw(*frame).data());
+                virtual_camera_->publish(canvas->draw(*frame));
             }
 #endif
-            QImage image(frame->pixels.data(), frame->width, frame->height, frame->stride, QImage::Format_RGB32);
             bool notify = false;
             {
                 std::lock_guard lock(frame_mutex_);
-                latest_frame_ = image.copy();  // copy: the frame buffer dies with this scope
+                latest_frame_ = frame;  // shared with the UI thread, never modified again
                 notify = !frame_notified_;
                 frame_notified_ = true;
             }
@@ -188,10 +188,10 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
     }
 }
 
-QImage Pipeline::takeLatestFrame() {
+Pipeline::Frame Pipeline::takeLatestFrame() {
     std::lock_guard lock(frame_mutex_);
     frame_notified_ = false;
-    return std::exchange(latest_frame_, QImage());
+    return std::exchange(latest_frame_, nullptr);
 }
 
 void Pipeline::report_stats() {
