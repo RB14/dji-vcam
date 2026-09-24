@@ -1,23 +1,57 @@
 #include "main_window.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QComboBox>
 #include <QLabel>
+#include <QMenu>
 #include <QMessageBox>
+#include <QSettings>
 #include <QStatusBar>
+#include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 
+#include <algorithm>
+
+#include "bridge_link.h"
+#include "djivcam/camera_ble.h"
 #include "pipeline.h"
 #include "preview_widget.h"
 
 using djivcam::media::DecoderPreference;
+using Stage = CameraConnector::Stage;
+
+namespace {
+
+const QString kIdentifierKey = QStringLiteral("camera/identifier");
+const QString kAddressKey = QStringLiteral("camera/address");
+const QString kBluetoothKey = QStringLiteral("connect/wakeOverBluetooth");
+const QString kBridgeKey = QStringLiteral("connect/configureBridge");
+const QString kStartupKey = QStringLiteral("connect/onStartup");
+const QString kDecoderKey = QStringLiteral("video/decoder");
+const QString kPairingToken = QStringLiteral("obsd");  // shown on the camera's approval prompt
+constexpr qint64 kRewakeAfterMs = 20000;                // camera network gone this long: wake again
+
+QAction* add_toggle(QMenu* menu, const QString& text, QSettings* settings, const QString& key, bool fallback) {
+    QAction* action = menu->addAction(text);
+    action->setCheckable(true);
+    action->setChecked(settings->value(key, fallback).toBool());
+    QObject::connect(action, &QAction::toggled, menu, [settings, key](bool on) { settings->setValue(key, on); });
+    return action;
+}
+
+}  // namespace
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent),
+      settings_(new QSettings(this)),
       pipeline_(new Pipeline(this)),
+      connector_(new CameraConnector(this)),
       preview_(new PreviewWidget(this)),
       connect_action_(new QAction(tr("Connect"), this)),
       decoder_choice_(new QComboBox(this)),
+      camera_label_(new QLabel(this)),
       state_label_(new QLabel(tr("Not connected"), this)),
       format_label_(new QLabel(this)),
       stats_label_(new QLabel(this)),
@@ -26,9 +60,23 @@ MainWindow::MainWindow(QWidget* parent)
     setCentralWidget(preview_);
     resize(1280, 800);
 
-    decoder_choice_->addItem(tr("Decoder: auto (GPU if available)"), QVariant::fromValue(int(DecoderPreference::Auto)));
-    decoder_choice_->addItem(tr("Decoder: GPU"), QVariant::fromValue(int(DecoderPreference::Hardware)));
-    decoder_choice_->addItem(tr("Decoder: CPU"), QVariant::fromValue(int(DecoderPreference::Software)));
+    decoder_choice_->addItem(tr("Decoder: auto (GPU if available)"), int(DecoderPreference::Auto));
+    decoder_choice_->addItem(tr("Decoder: GPU"), int(DecoderPreference::Hardware));
+    decoder_choice_->addItem(tr("Decoder: CPU"), int(DecoderPreference::Software));
+    decoder_choice_->setCurrentIndex(std::max(0, decoder_choice_->findData(settings_->value(kDecoderKey, 0).toInt())));
+    connect(decoder_choice_, &QComboBox::currentIndexChanged, this,
+            [this] { settings_->setValue(kDecoderKey, decoder_choice_->currentData()); });
+
+    auto* options = new QMenu(tr("Options"), this);
+    bluetooth_action_ = add_toggle(options, tr("Wake the camera over Bluetooth"), settings_, kBluetoothKey, true);
+    bridge_action_ = add_toggle(options, tr("Configure the ESP32 USB bridge automatically"), settings_, kBridgeKey, true);
+    startup_action_ = add_toggle(options, tr("Connect on startup"), settings_, kStartupKey, false);
+    options->addSeparator();
+    connect(options->addAction(tr("Forget the paired camera")), &QAction::triggered, this, &MainWindow::forgetCamera);
+    auto* options_button = new QToolButton(this);
+    options_button->setText(tr("Options"));
+    options_button->setMenu(options);
+    options_button->setPopupMode(QToolButton::InstantPopup);
 
     connect_action_->setCheckable(true);
     auto* toolbar = addToolBar(tr("Camera"));
@@ -36,6 +84,9 @@ MainWindow::MainWindow(QWidget* parent)
     toolbar->addAction(connect_action_);
     toolbar->addSeparator();
     toolbar->addWidget(decoder_choice_);
+    toolbar->addWidget(options_button);
+    toolbar->addSeparator();
+    toolbar->addWidget(camera_label_);
 
     statusBar()->addWidget(state_label_, 1);
     statusBar()->addPermanentWidget(format_label_);
@@ -48,55 +99,137 @@ MainWindow::MainWindow(QWidget* parent)
             preview_->showFrame(frame);
         }
     });
-    connect(pipeline_, &Pipeline::stateChanged, this, &MainWindow::onStateChanged);
+    connect(pipeline_, &Pipeline::stateChanged, this, &MainWindow::onSessionState);
     connect(pipeline_, &Pipeline::statsUpdated, this, &MainWindow::onStats);
     connect(pipeline_, &Pipeline::decoderChanged, this, &MainWindow::onDecoder);
     connect(pipeline_, &Pipeline::formatChanged, this, [this](int width, int height) {
-        format_label_->setText(tr("%1\u00d7%2").arg(width).arg(height));
+        format_label_->setText(tr("%1×%2").arg(width).arg(height));
     });
     connect(pipeline_, &Pipeline::errorOccurred, this, [this](const QString& message) {
         QMessageBox::warning(this, tr("Decoder error"), message);
         connect_action_->setChecked(false);
     });
+    connect(connector_, &CameraConnector::stageChanged, this, &MainWindow::onConnectorStage);
+    connect(connector_, &CameraConnector::wifiReady, this, &MainWindow::onWifiReady);
+    connect(connector_, &CameraConnector::cameraFound, this, [this](const QString& name, const QString& address) {
+        camera_label_->setText(tr("Camera: %1").arg(name));
+        settings_->setValue(kAddressKey, address);
+    });
+
+    if (startup_action_->isChecked()) {
+        QTimer::singleShot(0, this, &MainWindow::connectCamera);
+    }
 }
 
-MainWindow::~MainWindow() { pipeline_->stop(); }
+MainWindow::~MainWindow() {
+    connector_->stop();
+    pipeline_->stop();
+}
 
 void MainWindow::connectCamera() { connect_action_->setChecked(true); }
+
+void MainWindow::importPairingIdentifier(const QString& identifier) { settings_->setValue(kIdentifierKey, identifier); }
+
+QString MainWindow::pairingIdentifier() {
+    QString identifier = settings_->value(kIdentifierKey).toString();
+    if (identifier.isEmpty()) {
+        identifier = QString::fromStdString(djivcam::ble::make_identifier());  // approved once on the camera
+        settings_->setValue(kIdentifierKey, identifier);
+    }
+    return identifier;
+}
+
+void MainWindow::forgetCamera() {
+    settings_->remove(kIdentifierKey);
+    settings_->remove(kAddressKey);
+    camera_label_->clear();
+    QMessageBox::information(this, tr("Camera forgotten"),
+                             tr("The next connection pairs again; approve the request on the camera screen."));
+}
 
 void MainWindow::toggleConnection(bool connect) {
     connect_action_->setText(connect ? tr("Disconnect") : tr("Connect"));
     decoder_choice_->setEnabled(!connect);
-    if (connect) {
-        const auto decoder = static_cast<DecoderPreference>(decoder_choice_->currentData().toInt());
-        djivcam::SessionConfig config;
-        if (!identifier_.isEmpty()) {
-            config.identifier = identifier_.toStdString();
-        }
-        pipeline_->start(config, decoder);
-    } else {
+    if (!connect) {
+        connector_->stop();
         pipeline_->stop();
         preview_->clear();
-        state_label_->setText(tr("Not connected"));
+        streaming_ = false;
+        showStage(tr("Not connected"));
         format_label_->clear();
         stats_label_->clear();
         decoder_label_->clear();
+        return;
+    }
+    // The session waits for the camera network by itself; Bluetooth (if enabled) brings it up.
+    djivcam::SessionConfig config;
+    config.identifier = pairingIdentifier().toStdString();
+    config.token = kPairingToken.toStdString();
+    network_missing_.invalidate();
+    pipeline_->start(config, static_cast<DecoderPreference>(decoder_choice_->currentData().toInt()));
+    if (bluetooth_action_->isChecked()) {
+        if (CameraConnector::bluetoothAvailable()) {
+            connector_->start(pairingIdentifier(), kPairingToken, settings_->value(kAddressKey).toString());
+        } else {
+            showStage(tr("Bluetooth is off or missing: join the camera's Wi-Fi another way"), true);
+        }
     }
 }
 
-void MainWindow::onStateChanged(const QString& state, const QString& detail) {
-    // Friendly, capitalized stage text; the session's detail (e.g. "no video, reconnecting") after it.
-    QString stage = state;
-    if (!stage.isEmpty()) {
-        stage[0] = stage[0].toUpper();
+void MainWindow::showStage(const QString& text, bool attention) {
+    state_label_->setText(text);
+    state_label_->setStyleSheet(attention ? QStringLiteral("color: #d97706; font-weight: bold;") : QString());
+    if (attention) {
+        QApplication::alert(this);
     }
+}
+
+void MainWindow::onConnectorStage(Stage stage, const QString& detail) {
+    connector_stage_ = stage;
+    // Bluetooth stages matter until the camera's Wi-Fi is up; after that the session speaks.
+    if (!streaming_ && stage != Stage::Idle && stage != Stage::WifiReady) {
+        showStage(detail, stage == Stage::ApprovalNeeded || stage == Stage::Failed);
+    }
+}
+
+void MainWindow::onWifiReady(const QString& ssid, const QString& password) {
+    network_missing_.invalidate();
+    if (!bridge_action_->isChecked()) {
+        return;
+    }
+    showStage(tr("Configuring the ESP32 bridge"));
+    QString error;
+    if (!BridgeLink::ensureCredentials(ssid, password, &error)) {
+        showStage(tr("%1: join the camera's Wi-Fi another way").arg(error), true);
+    }
+}
+
+void MainWindow::onSessionState(const QString& state, const QString& detail) {
+    streaming_ = state == QLatin1String("streaming");
     if (state == QLatin1String("waiting for camera network")) {
-        stage = tr("Waiting for the camera network (is the camera awake and the bridge joined?)");
+        if (!network_missing_.isValid()) {
+            network_missing_.start();  // checked every second in onStats()
+        }
+        if (connector_stage_ != Stage::Idle && connector_stage_ != Stage::WifiReady) {
+            return;  // a Bluetooth stage is more informative right now
+        }
+        showStage(tr("Waiting for the camera network%1").arg(detail.isEmpty() ? QString() : " (" + detail + ")"));
+        return;
     }
-    state_label_->setText(detail.isEmpty() ? stage : QStringLiteral("%1: %2").arg(stage, detail));
+    network_missing_.invalidate();
+    if (state == QLatin1String("connecting")) {
+        showStage(tr("Connecting to the camera%1").arg(detail.isEmpty() ? QString() : " (" + detail + ")"));
+    } else if (streaming_) {
+        showStage(tr("Streaming"));
+    }
 }
 
 void MainWindow::onStats(double fps, double kbps, double loss_percent, quint64 recovered, quint64 reconnects) {
+    if (!streaming_ && network_missing_.isValid() && network_missing_.elapsed() > kRewakeAfterMs &&
+        connector_stage_ == Stage::WifiReady) {
+        connector_->wakeAgain();  // the camera's access point went away
+        network_missing_.restart();
+    }
     stats_label_->setText(tr("%1 fps  |  %2 kbit/s  |  loss %3%  |  %4 recovered  |  %5 reconnects")
                               .arg(fps, 0, 'f', 0)
                               .arg(kbps, 0, 'f', 0)

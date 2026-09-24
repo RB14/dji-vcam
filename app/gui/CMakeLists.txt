@@ -1,13 +1,15 @@
-find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets OpenGLWidgets)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets OpenGLWidgets SerialPort)
 qt_standard_project_setup()
 
 qt_add_executable(dji-vcam WIN32
     main.cpp
+    bridge_link.cpp bridge_link.h
+    camera_connector.cpp camera_connector.h
     main_window.cpp main_window.h
     pipeline.cpp pipeline.h
     preview_widget.cpp preview_widget.h
 )
-target_link_libraries(dji-vcam PRIVATE Qt6::Widgets Qt6::OpenGLWidgets djivcam_core djivcam_media)
+target_link_libraries(dji-vcam PRIVATE Qt6::Widgets Qt6::OpenGLWidgets Qt6::SerialPort djivcam_core djivcam_ble djivcam_media)
 
 if(WIN32)
     # Make the build directory runnable: Qt runtime (windeployqt) and FFmpeg DLLs next to the exe.

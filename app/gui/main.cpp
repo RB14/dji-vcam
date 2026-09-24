@@ -15,13 +15,13 @@ int main(int argc, char* argv[]) {
     parser.addOption(connect_option);
     const QCommandLineOption identifier_option(
         QStringLiteral("identifier"),
-        QStringLiteral("Pairing identifier the camera has approved (32 hex chars)."), QStringLiteral("id"));
+        QStringLiteral("Import a pairing identifier the camera has already approved (32 hex chars)."), QStringLiteral("id"));
     parser.addOption(identifier_option);
     parser.process(app);
 
     MainWindow window;
     if (parser.isSet(identifier_option)) {
-        window.setPairingIdentifier(parser.value(identifier_option));
+        window.importPairingIdentifier(parser.value(identifier_option));
     }
     window.show();
     if (parser.isSet(connect_option)) {
