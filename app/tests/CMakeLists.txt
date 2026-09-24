@@ -10,6 +10,7 @@ add_executable(osmolink_tests
     datalink_test.cpp
     duml_test.cpp
     h264_test.cpp
+    reassembler_test.cpp
 )
 target_link_libraries(osmolink_tests PRIVATE osmolink_core GTest::gtest_main)
 

@@ -3,6 +3,7 @@ add_library(osmolink_core STATIC
     src/duml.cpp
     src/h264.cpp
     src/net.cpp
+    src/reassembler.cpp
     src/session.cpp
 )
 target_include_directories(osmolink_core PUBLIC include)

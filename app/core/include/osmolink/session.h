@@ -36,6 +36,8 @@ struct SessionConfig {
     // Session alive but no video for this long (e.g. the camera still streams to a previous,
     // abandoned session): reconnect with a fresh handshake.
     std::chrono::milliseconds video_timeout{3000};
+    // How long to wait for a missing video datagram (re-sent by the camera) before skipping it.
+    std::chrono::milliseconds gap_timeout{50};
 };
 
 struct SessionStats {
@@ -43,8 +45,8 @@ struct SessionStats {
     std::uint64_t video_datagrams = 0;
     std::uint64_t video_bytes = 0;
     std::uint64_t duplicates = 0;
-    std::uint64_t lost = 0;       // video datagrams never received (sequence gaps)
-    std::uint64_t reordered = 0;  // video datagrams that arrived after a later one
+    std::uint64_t lost = 0;       // video datagrams skipped after gap_timeout (lost for good)
+    std::uint64_t recovered = 0;  // gaps filled by a late or re-sent datagram
     std::uint64_t reconnects = 0;
 };
 
@@ -67,8 +69,6 @@ public:
 
 private:
     void run(std::stop_token stop);
-    // Counts gaps (losses) and late arrivals in the video datagram sequence.
-    void track_sequence(std::optional<std::uint16_t>& highest, std::uint16_t seq);
     void set_state(SessionState state, const std::string& detail);
 
     SessionConfig config_;
@@ -80,7 +80,7 @@ private:
     std::atomic<std::uint64_t> video_bytes_{0};
     std::atomic<std::uint64_t> duplicates_{0};
     std::atomic<std::uint64_t> lost_{0};
-    std::atomic<std::uint64_t> reordered_{0};
+    std::atomic<std::uint64_t> recovered_{0};
     std::atomic<std::uint64_t> reconnects_{0};
     std::jthread thread_;
 };

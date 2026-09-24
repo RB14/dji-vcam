@@ -69,6 +69,9 @@ public:
                    std::uint8_t flags = duml::kFlagRequest);
     // Window ACK: [start][end][u32 0] for video, download and control, plus u16 0. Seq 0.
     void send_ack();
+    // Video position to acknowledge: the last contiguous datagram received. Acknowledging only
+    // contiguous data tells the camera about gaps so it can re-send them.
+    void set_video_ack(std::optional<std::uint16_t> seq) { video_ack_ = seq; }
 
     // Receives one datagram, waiting up to `timeout`.
     std::optional<Datagram> receive(std::chrono::milliseconds timeout);
@@ -95,7 +98,7 @@ private:
     std::uint16_t duml_seq_ = 0xA000;
     std::uint16_t video_cursor_ = 0;
     std::uint16_t download_cursor_ = 0;
-    std::optional<std::uint16_t> last_video_seq_;
+    std::optional<std::uint16_t> video_ack_;
     std::chrono::steady_clock::time_point last_video_time_{};
     duml::StreamParser parser_;
 };

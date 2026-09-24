@@ -99,7 +99,7 @@ void Link::send_ack() {
     // While video flows, ack what we received; when it stalls, fall back to the camera's own
     // video cursor from its status frames so a stuck window can always recover.
     const bool video_fresh = std::chrono::steady_clock::now() - last_video_time_ < kVideoStall;
-    const std::uint16_t video = last_video_seq_ && video_fresh ? *last_video_seq_ : video_cursor_;
+    const std::uint16_t video = video_ack_ && video_fresh ? *video_ack_ : video_cursor_;
     Bytes payload;
     for (std::uint16_t cursor : {video, download_cursor_, base_}) {
         put_le16(payload, cursor);
@@ -127,13 +127,7 @@ std::optional<Datagram> Link::receive(std::chrono::milliseconds timeout) {
         video_cursor_ = read_le16(raw, 10);
         download_cursor_ = read_le16(raw, 18);
     }
-    // Move the video ACK forward only: a late or retransmitted packet must not rewind it, or the
-    // camera re-sends the window. A far jump is the camera restarting its video stream (e.g. after a
-    // recording-format change) and is accepted in either direction.
     if (datagram.type == PacketType::Video) {
-        if (!last_video_seq_ || seq_ahead(datagram.seq, *last_video_seq_) || !seq_near(datagram.seq, *last_video_seq_)) {
-            last_video_seq_ = datagram.seq;
-        }
         last_video_time_ = std::chrono::steady_clock::now();
     }
     return datagram;

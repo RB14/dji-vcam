@@ -57,11 +57,11 @@ int main(int argc, char* argv[]) {
     for (int second = 0; second < seconds; ++second) {
         std::this_thread::sleep_for(1s);
         const auto stats = session.stats();
-        std::printf("[%7.3f] datagrams +%llu, video +%llu (%.0f kbit/s), lost %llu, reordered %llu, dup %llu, reconnects %llu\n",
+        std::printf("[%7.3f] datagrams +%llu, video +%llu (%.0f kbit/s), lost %llu, recovered %llu, dup %llu, reconnects %llu\n",
                     stamp(), static_cast<unsigned long long>(stats.datagrams - previous.datagrams),
                     static_cast<unsigned long long>(stats.video_datagrams - previous.video_datagrams),
                     static_cast<double>(stats.video_bytes - previous.video_bytes) * 8 / 1000,
-                    static_cast<unsigned long long>(stats.lost), static_cast<unsigned long long>(stats.reordered),
+                    static_cast<unsigned long long>(stats.lost), static_cast<unsigned long long>(stats.recovered),
                     static_cast<unsigned long long>(stats.duplicates), static_cast<unsigned long long>(stats.reconnects));
         std::fflush(stdout);
         previous = stats;

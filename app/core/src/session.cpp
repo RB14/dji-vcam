@@ -1,13 +1,11 @@
 #include "osmolink/session.h"
 
-#include <algorithm>
-#include <array>
-#include <deque>
 #include <optional>
 
 #include "osmolink/datalink.h"
 #include "osmolink/duml.h"
 #include "osmolink/net.h"
+#include "osmolink/reassembler.h"
 
 namespace osmolink {
 namespace {
@@ -17,9 +15,6 @@ using Clock = std::chrono::steady_clock;
 using duml::Bytes;
 
 constexpr std::size_t kVideoSubheaderLen = 12;
-constexpr std::size_t kDuplicateWindow = 512;
-constexpr std::uint16_t kSeqStep = 8;         // the camera advances its datagram seq by 8
-constexpr std::uint16_t kMaxCountedGap = 512;  // larger jumps are stream restarts, not losses
 constexpr auto kAckInterval = 30ms;
 constexpr auto kHeartbeatInterval = 200ms;
 constexpr auto kRegisterInterval = 1000ms;
@@ -101,32 +96,13 @@ void LiveViewSession::stop() {
 }
 
 SessionStats LiveViewSession::stats() const {
-    return SessionStats{datagrams_, video_datagrams_, video_bytes_, duplicates_, lost_, reordered_, reconnects_};
+    return SessionStats{datagrams_, video_datagrams_, video_bytes_, duplicates_, lost_, recovered_, reconnects_};
 }
 
 void LiveViewSession::set_state(SessionState state, const std::string& detail) {
     if (state_.exchange(state) != state || !detail.empty()) {
         if (on_state_) {
             on_state_(state, detail);
-        }
-    }
-}
-
-void LiveViewSession::track_sequence(std::optional<std::uint16_t>& highest, std::uint16_t seq) {
-    if (!highest) {
-        highest = seq;
-        return;
-    }
-    const auto ahead = static_cast<std::uint16_t>(seq - *highest);
-    if (ahead != 0 && ahead < 0x8000) {
-        if (ahead <= kMaxCountedGap && ahead % kSeqStep == 0) {
-            lost_ += ahead / kSeqStep - 1;
-        }
-        highest = seq;
-    } else if (ahead != 0) {
-        ++reordered_;
-        if (lost_ > 0) {
-            --lost_;  // a late arrival, not a loss after all
         }
     }
 }
@@ -178,10 +154,24 @@ void LiveViewSession::run(std::stop_token stop) {
         set_state(SessionState::Streaming, "");
 
         // 3. Stream until stopped or the camera goes silent.
-        std::deque<std::uint16_t> recent_video;
-        std::optional<std::uint16_t> highest_video;
+        VideoReassembler reassembler(
+            [this](std::span<const std::uint8_t> payload) {
+                if (payload.size() <= kVideoSubheaderLen) {
+                    return;
+                }
+                const auto video = payload.subspan(kVideoSubheaderLen);
+                ++video_datagrams_;
+                video_bytes_ += video.size();
+                if (on_video_) {
+                    on_video_(video);
+                }
+            },
+            config_.gap_timeout);
         std::uint8_t heartbeat_counter = 0;
         unsigned heartbeat_ticks = 0;
+        const std::uint64_t lost_base = lost_;
+        const std::uint64_t recovered_base = recovered_;
+        const std::uint64_t duplicates_base = duplicates_;
         auto now = Clock::now();
         auto last_packet = now;
         auto last_video = now;
@@ -195,30 +185,18 @@ void LiveViewSession::run(std::stop_token stop) {
                 ++datagrams_;
                 if (datagram->type == datalink::PacketType::Video) {
                     last_video = last_packet;
-                    if (std::find(recent_video.begin(), recent_video.end(), datagram->seq) != recent_video.end()) {
-                        ++duplicates_;
-                    } else {
-                        track_sequence(highest_video, datagram->seq);
-                        recent_video.push_back(datagram->seq);
-                        if (recent_video.size() > kDuplicateWindow) {
-                            recent_video.pop_front();
-                        }
-                        const auto payload = datagram->payload();
-                        if (payload.size() > kVideoSubheaderLen) {
-                            const auto video = payload.subspan(kVideoSubheaderLen);
-                            ++video_datagrams_;
-                            video_bytes_ += video.size();
-                            if (on_video_) {
-                                on_video_(video);
-                            }
-                        }
-                    }
+                    reassembler.push(datagram->seq, datagram->payload(), last_packet);
                 } else {
                     answer_requests(link, *datagram);
                 }
             }
 
             now = Clock::now();
+            reassembler.poll(now);
+            const auto& video_stats = reassembler.stats();
+            lost_ = lost_base + video_stats.skipped;
+            recovered_ = recovered_base + video_stats.recovered;
+            duplicates_ = duplicates_base + video_stats.duplicates;
             if (now - last_packet > config_.silence_timeout) {
                 set_state(SessionState::WaitingForRoute, "camera went silent, reconnecting");
                 break;
@@ -228,6 +206,7 @@ void LiveViewSession::run(std::stop_token stop) {
                 break;
             }
             if (now >= next_ack) {
+                link.set_video_ack(reassembler.ack_seq());
                 link.send_ack();
                 next_ack = now + kAckInterval;
             }
