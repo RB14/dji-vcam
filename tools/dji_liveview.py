@@ -22,6 +22,7 @@ from pathlib import Path
 import datalink
 import duml
 from dji_ble import APP_DEVICE_INFO, PAIRING_TOKEN, load_identifier
+from h264_sps import SpsInfo, parse_sps
 
 CAPTURE_DIR = Path(__file__).resolve().parent.parent / "captures"
 REGISTER_88 = bytes.fromhex("170046237c415050000000000002")
@@ -77,6 +78,52 @@ def nal_summary(stream: bytes) -> str:
             "(H.264: 7=SPS 8=PPS 5=IDR 1=slice; HEVC: 32=VPS 33=SPS 34=PPS 19/20=IDR 1=slice)")
 
 
+class StreamWatcher:
+    """Watches the H.264 byte stream for format changes (SPS) and counts frames (AUDs)."""
+
+    START = b"\x00\x00\x01"
+    AUD = b"\x00\x00\x01\x09"
+
+    def __init__(self) -> None:
+        self._tail = b""
+        self._sps = b""
+        self.info: SpsInfo | None = None
+        self.frames = 0
+
+    def feed(self, data: bytes) -> SpsInfo | None:
+        """Returns the new stream format when it changes."""
+        buf = self._tail + data
+        self.frames += buf.count(self.AUD) - self._tail.count(self.AUD)
+        changed = None
+        i = buf.find(self.START)
+        while 0 <= i < len(buf) - 3:
+            if buf[i + 3] & 0x1F == 7:
+                end = buf.find(self.START, i + 3)
+                if end < 0:
+                    break  # SPS not complete yet; the tail keeps it for the next feed
+                nal = buf[i + 3:end].rstrip(b"\x00")
+                if nal != self._sps:
+                    self._sps = nal
+                    info = parse_sps(nal)
+                    if info != self.info:
+                        changed = self.info = info
+            i = buf.find(self.START, i + 3)
+        self._tail = buf[-64:]
+        return changed
+
+
+def decode_ability_payload(resolution: str) -> bytes:
+    """SendAppDecodeAbility (0x09/0xFD) TLV list: [count] then [type u8][value u32-LE] per item.
+    Type 1 = resolution, encoded as width (u16-LE) followed by height (u16-LE)."""
+    width, height = (int(v) for v in resolution.lower().split("x"))
+    return bytes([1, 1]) + struct.pack("<HH", width, height)
+
+
+def send_decode_ability(link: datalink.Datalink, payload: bytes | None) -> None:
+    if payload is not None:
+        link.send_duml(duml.ADDR_DM368_2, 0x09, 0xFD, payload)
+
+
 def start_live_view(link: datalink.Datalink) -> None:
     link.send_duml(duml.ADDR_DM368_2, 0x00, 0x81, APP_DEVICE_INFO, flags=duml.FLAG_WRITE)
     link.send_duml(duml.ADDR_DM368_2, 0x00, 0x82, b"\x00", flags=duml.FLAG_WRITE)
@@ -105,6 +152,10 @@ def run(args: argparse.Namespace) -> int:
     link.send_duml(duml.ADDR_DM368_1, 0x00, 0x88, REGISTER_88)
     link.recv(0.3)
     link.send_ack()
+    ability = decode_ability_payload(args.decode_ability) if args.decode_ability else None
+    if ability is not None:
+        log(f"sending SendAppDecodeAbility 09/fd payload {ability.hex()}")
+    send_decode_ability(link, ability)
     start_live_view(link)
     log("registered; live-view trigger sent, streaming heartbeat")
 
@@ -112,6 +163,8 @@ def run(args: argparse.Namespace) -> int:
     out_path = CAPTURE_DIR / f"liveview-{time.strftime('%Y%m%d-%H%M%S')}.bin"
     subheaders: list[str] = []
     recent_video_seqs: deque[int] = deque(maxlen=512)
+    watcher = StreamWatcher()
+    last_frames = 0
     duplicates = 0
     seen_frames: Counter = Counter()
     video_bytes = 0
@@ -137,6 +190,8 @@ def run(args: argparse.Namespace) -> int:
                     if len(subheaders) < 12:
                         subheaders.append(body[:VIDEO_SUBHEADER_LEN].hex())
                     video_out.write(body[VIDEO_SUBHEADER_LEN:])
+                    if (new_format := watcher.feed(body[VIDEO_SUBHEADER_LEN:])) is not None:
+                        log(f"PREVIEW FORMAT: {new_format}")
                     if player is not None:
                         try:
                             player.stdin.write(body[VIDEO_SUBHEADER_LEN:])
@@ -146,6 +201,8 @@ def run(args: argparse.Namespace) -> int:
                     video_bytes += max(0, len(body) - VIDEO_SUBHEADER_LEN)
                 for frame in link.duml_frames(datagram):
                     seen_frames[(frame.cmd_set, frame.cmd_id)] += 1
+                    if frame.cmd_set == 0x09:
+                        log(f"<- {frame.describe()}")
                     if frame.is_request:
                         if args.verbose:
                             log(f"<- {frame.describe()}")
@@ -167,12 +224,15 @@ def run(args: argparse.Namespace) -> int:
                 link.send_duml(duml.ADDR_DM368_1, 0x00, 0x88, REGISTER_88)
                 next_register = now + REGISTER_INTERVAL
             if now >= next_trigger:
+                send_decode_ability(link, ability)
                 start_live_view(link)
                 next_trigger = now + TRIGGER_INTERVAL
             if now >= next_report:
                 kbps = (video_bytes - last_report_bytes) * 8 / 1000
                 last_report_bytes = video_bytes
-                log(f"packets {dict(sorted(link.stats.by_type.items()))} video {kbps:.0f} kbit/s")
+                fps = watcher.frames - last_frames
+                last_frames = watcher.frames
+                log(f"packets {dict(sorted(link.stats.by_type.items()))} video {kbps:.0f} kbit/s {fps} fps")
                 next_report = now + 1.0
 
     link.close()
@@ -194,6 +254,8 @@ def main() -> None:
     parser.add_argument("--wait", type=float, default=60.0, help="max seconds to wait for the camera subnet")
     parser.add_argument("--port", type=int, default=datalink.DATALINK_PORT)
     parser.add_argument("--play", action="store_true", help="show the stream live in a low-latency ffplay window")
+    parser.add_argument("--decode-ability", metavar="WxH",
+                        help="announce the app's decode resolution (SendAppDecodeAbility, e.g. 1920x1080)")
     parser.add_argument("-v", "--verbose", action="store_true")
     raise SystemExit(run(parser.parse_args()))
 

@@ -306,6 +306,13 @@ heartbeat every 200 ms, `0x81`/`0x82` every 2 s, `0x88` every 1 s). Observations
 - The AP is torn down a few seconds after the datalink goes idle; a paired app re-wakes it over BLE
   (`0x00/0x2B`, `0x07/0x45` -> `00 01`, `0x53/0x10`) without another on-screen approval.
 - Measured glass-to-glass latency through the ESP32-S3 USB bridge into ffplay: ~135 ms.
+- The preview format follows the recording **aspect ratio** only: 16:9 -> 1280x720, 4:3 -> 960x720.
+  Recording resolution (4K / 2.7K / 1080p) and frame rate (30/60/120) leave it at 720
+  lines and ~30 fps; only the H.264 level toggles between 3.1 and 3.2. A 1080p preview therefore
+  does not come from recording settings (tested 2026-09-24; slow-motion modes not tested).
+- A recording-format change restarts the camera's video stream with a new sequence number. The
+  video ACK must accept such a jump (and fall back to the status-frame video cursor while video is
+  stalled), otherwise the camera's send window fills and the video stops for good.
 
 The original plan, kept for reference:
 
@@ -392,3 +399,34 @@ cfg   02/8e -> 0x01   5513040302012d8c40028e01011a0001007516                    
 start 08/78           553704f902082c8c400878002a000a70170200030000001c0072746d703a2f2f3139322e3136382e312e31302f6c6976652f6f6135e192
 confirm 02/8e         551304030208c8ea40028e01011a000101092b
 ```
+
+---
+
+## (d) DJI Mimo 2.12.1 APK analysis (2026-09-24)
+
+The symbols of the app's native SDK library (`libdjisdk_jni.so`, 51k of them) give DJI's own
+names for 321 DUML
+commands. Reference lists in `docs/reference/`:
+
+- `duml-command-map.txt`: cmd_set/cmd_id -> DJI request/response struct names (camera settings:
+  exposure mode `0x02/0x1e`, shutter `0x02/0x28`, ISO `0x02/0x2a`, white balance `0x02/0x2c`,
+  EV `0x02/0x2e`, color tone `0x02/0x3e`, working mode `0x02/0x10`, recording mode `0x02/0x6c`,
+  `parameter_option` `0x02/0x8e`, take photo `0x02/0x01`, record `0x02/0x02`, audio `0x02/0x9f`...).
+  Payload layouts are not in the names and still need working out per command.
+- `dds-topics.txt`: XRCE-DDS topics carried by `0x00/0x99` (e.g. `camcap_eis` stabilization,
+  `camcap_antiflicker`, `camcap_capture_aspect_type`); the Action 5 Pro publishes its settings here.
+- `camera-keys.txt`: the SDK's camera key names.
+
+Findings:
+
+- **No live-view quality control for the Action 5 Pro (AC204) in Mimo.** The SDK keys
+  `LiveViewQuality` (NORMAL/FINE/SFINE), `LiveViewOutputFormat` and `H1LiveViewResolutionFrameRate`
+  (720p30/1080p30/720p60) are wired only to drone camera abstractions, never to `AC204CameraAbs`.
+- Our start-sequence commands, by DJI's names: `0x00/0x88` = query_device_information (Mimo sends
+  `17 00 00 23 00 'APP' 00x5 02`; bytes 2 and 4 are masked), `0x00/0x99` = XRCE-DDS pub/sub,
+  `0x00/0x4F` = get_version_config (our 200 ms "heartbeat"), `0x00/0x81`/`0x82` are DM368
+  low-level commands outside this SDK layer.
+- `SendAppDecodeAbility` = `0x09/0xFD` to `0x48`, TLV list `[count]` + `[type u8][value u32-LE]`
+  (1 = resolution, 2 = codec, 3 = bit depth, 4 = bitrate, 5 = frame rate). Tested with 1920x1080:
+  **no reply and no effect** on the Action 5 Pro (stream stays 1280x720).
+- `AppRequestIFrame` = `0x09/0xA8` to `0x48`: on-demand keyframe (useful for faster startup).

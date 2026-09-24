@@ -33,6 +33,7 @@ TYPE_COMMAND = 0x05
 HEADER_LEN = 8
 ROUTING_LEN = 12
 STATUS_FRAME_LEN = 34
+VIDEO_STALL_S = 0.3
 # Window 100, MTU 1472 (c0 05) and the rest as DJI Mimo sends it; prefixed by our base sequence.
 HANDSHAKE_TAIL = bytes.fromhex("64006400c005140000640000019001c005140000640014006400c00514000064000101040102")
 
@@ -48,6 +49,12 @@ def header(pkt_type: int, payload_len: int, session_id: int, seq: int) -> bytes:
 def seq_ahead(new: int, old: int) -> bool:
     """True if 16-bit sequence `new` is ahead of `old` (with wrap-around)."""
     return 0 < ((new - old) & 0xFFFF) < 0x8000
+
+
+def seq_near(a: int, b: int, window: int = 1024) -> bool:
+    """True if 16-bit sequences `a` and `b` are within `window` of each other (with wrap-around)."""
+    diff = (a - b) & 0xFFFF
+    return diff < window or diff > 0x10000 - window
 
 
 def routing_header(seq: int, cmd_counter: int) -> bytes:
@@ -87,6 +94,7 @@ class Datalink:
         self.video_cursor = 0
         self.download_cursor = 0
         self.last_video_seq: int | None = None
+        self.last_video_time = 0.0
         self.stats = LinkStats()
         self._parser = duml.StreamParser()
 
@@ -110,7 +118,10 @@ class Datalink:
 
     def send_ack(self) -> None:
         """Window ACK: [start][end][u32 0] for video, download and control, plus u16 0. Seq 0."""
-        video = self.last_video_seq if self.last_video_seq is not None else self.video_cursor
+        # While video flows, ack what we received; when it stalls, fall back to the camera's own
+        # video cursor from its status frames so a stuck window can always recover.
+        video_fresh = time.monotonic() - self.last_video_time < VIDEO_STALL_S
+        video = self.last_video_seq if self.last_video_seq is not None and video_fresh else self.video_cursor
         payload = b"".join(struct.pack("<HHI", v, v, 0) for v in (video, self.download_cursor, self.base))
         self._send(TYPE_ACK, payload + b"\x00\x00", seq=0)
 
@@ -141,10 +152,14 @@ class Datalink:
             if pkt_type == TYPE_STATUS and len(raw) == STATUS_FRAME_LEN:
                 self.video_cursor = struct.unpack_from("<H", raw, 10)[0]
                 self.download_cursor = struct.unpack_from("<H", raw, 18)[0]
-            if pkt_type == TYPE_VIDEO and (self.last_video_seq is None or seq_ahead(seq, self.last_video_seq)):
-                # Only move the video ACK forward: a late or retransmitted packet must not rewind it,
-                # or the camera re-sends the window.
-                self.last_video_seq = seq
+            if pkt_type == TYPE_VIDEO:
+                # Move the video ACK forward only: a late or retransmitted packet must not rewind it,
+                # or the camera re-sends the window. A far jump is the camera restarting its video
+                # stream (e.g. after a recording-format change) and is accepted in either direction.
+                last = self.last_video_seq
+                if last is None or seq_ahead(seq, last) or not seq_near(seq, last):
+                    self.last_video_seq = seq
+                self.last_video_time = time.monotonic()
             out.append(Datagram(pkt_type, seq, raw))
 
     def duml_frames(self, datagram: Datagram) -> list[duml.Frame]:
