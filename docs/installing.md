@@ -116,7 +116,7 @@ as a PNG in `Pictures\DJI VCam`.
 
 | Symptom | What to try |
 |---|---|
-| Stuck on "Searching for the camera" | Switch the camera on / wake it; move it closer; check that Bluetooth is on |
+| Stuck on "Searching for the camera" | Switch the camera on / wake it; move it closer; check that Bluetooth is on. `dji-vcam-cli --ble-scan 10` (in the app folder) lists what the computer hears; the camera shows up as "DJI" |
 | Stuck on "Approve the pairing request" | Look at the camera screen and approve; the request expires after about 90 s and is repeated |
 | "ESP32 bridge not found on USB" | Use the board's "USB" port (not "UART"); try another cable |
 | Stuck on "Waiting for the camera network" | Camera Wi-Fi band must be 2.4 GHz; the app re-wakes the camera after 20 s |

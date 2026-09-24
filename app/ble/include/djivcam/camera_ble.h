@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace djivcam::ble {
 
@@ -64,5 +65,16 @@ private:
 
 // A fresh random pairing identifier (32 lowercase hex chars).
 std::string make_identifier();
+
+// A device heard while scanning (diagnostics).
+struct NearbyDevice {
+    std::string name;
+    std::string address;
+    int rssi = 0;
+    std::optional<std::uint8_t> dji_model;  // set for DJI devices
+};
+
+// Lists the Bluetooth LE devices advertising nearby during `duration` (empty if Bluetooth is off).
+std::vector<NearbyDevice> scan_nearby(std::chrono::milliseconds duration);
 
 }  // namespace djivcam::ble

@@ -35,8 +35,12 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       - [x] Installer script, packaging, app-local Visual C++ runtime
       - [ ] Test install, upgrade and uninstall (needs an administrator prompt)
       - [x] App icon (exe, windows, installer) and version info
-- [ ] **Replace SimpleBLE** (BUSL-1.1) with our own Bluetooth code: C++/WinRT on Windows, BlueZ
-      over D-Bus on Linux, so the project stays freely licensable
+- [~] **Replace SimpleBLE** (BUSL-1.1) with our own Bluetooth code: C++/WinRT on Windows, BlueZ
+      over D-Bus on Linux, so the project stays freely licensable (branch `ble-native`)
+      - [x] Platform layer (`app/ble/src/central.h`) and Windows backend on C++/WinRT; scanning
+            and the GUI's connect flow verified without the camera
+      - [ ] Verify with the camera (pair, wake, credentials, keepalive), then merge to main
+      - [ ] BlueZ backend for Linux (replaces the SimpleBLE stopgap), with the Linux milestone
 - [ ] **Rename** the repository folder and gdrive remote to `dji-vcam` (end of a session)
 
 ## Later

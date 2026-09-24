@@ -14,8 +14,9 @@ connects to a DJI Osmo Action camera over its own Wi-Fi, shows the live view, an
 
 ## Stack
 
-C++20, CMake, Qt 6.8 LTS (GUI only), FFmpeg (H.264 decode), SimpleBLE (Bluetooth LE on
-Windows/WinRT and Linux/BlueZ), GoogleTest. The Python tools in `tools/` remain the reference
+C++20, CMake, Qt 6.8 LTS (GUI only), FFmpeg (H.264 decode), Bluetooth LE through
+Windows.Devices.Bluetooth (C++/WinRT) on Windows and, for now, SimpleBLE (BlueZ) on Linux,
+GoogleTest. The Python tools in `tools/` remain the reference
 implementation and test bench.
 
 ## Components

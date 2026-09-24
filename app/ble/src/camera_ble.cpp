@@ -1,16 +1,17 @@
 #include "djivcam/camera_ble.h"
 
-#include <simpleble/SimpleBLE.h>
-
+#include <algorithm>
+#include <cctype>
 #include <condition_variable>
 #include <cstdio>
 #include <deque>
-#include <exception>
+#include <map>
 #include <mutex>
 #include <random>
 #include <thread>
 #include <vector>
 
+#include "central.h"
 #include "djivcam/duml.h"
 
 namespace djivcam::ble {
@@ -19,12 +20,13 @@ namespace {
 using namespace std::chrono_literals;
 using duml::Bytes;
 
-const std::string kService = "0000fff0-0000-1000-8000-00805f9b34fb";
-const std::string kNotify = "0000fff4-0000-1000-8000-00805f9b34fb";
-const std::string kWrite = "0000fff5-0000-1000-8000-00805f9b34fb";
+constexpr detail::ShortUuid kService = 0xFFF0;
+constexpr detail::ShortUuid kNotify = 0xFFF4;
+constexpr detail::ShortUuid kWrite = 0xFFF5;
 
 constexpr std::uint16_t kPairingSeq = 0x8092;
 constexpr auto kWriteSpacing = 20ms;  // back-to-back write-without-response frames get dropped
+constexpr auto kNameWait = 1500ms;     // how long a found camera may still send its name
 
 // 62-byte "APP" device-info blob the camera expects in reply to its 0x00/0x81 request.
 Bytes app_device_info() {
@@ -51,8 +53,9 @@ std::optional<std::string> parse_string_reply(const std::optional<duml::Frame>& 
 
 struct CameraBle::Impl {
     Log log;
-    std::optional<SimpleBLE::Adapter> adapter;
-    std::optional<SimpleBLE::Peripheral> peripheral;
+    std::unique_ptr<detail::Central> central;
+    std::unique_ptr<detail::GattLink> link;
+    std::string scanned_address;  // the camera find_camera() returned
 
     std::mutex mutex;
     std::condition_variable changed;
@@ -84,12 +87,8 @@ struct CameraBle::Impl {
                     frame = std::move(outbox.front());
                     outbox.pop_front();
                 }
-                try {
-                    if (peripheral && peripheral->is_connected()) {
-                        peripheral->write_command(kService, kWrite, SimpleBLE::ByteArray(frame));
-                    }
-                } catch (const std::exception& error) {
-                    say(std::string("write failed: ") + error.what());
+                if (link && !link->write(kService, kWrite, frame, false)) {
+                    say("write failed");
                 }
                 std::this_thread::sleep_for(kWriteSpacing);
             }
@@ -105,8 +104,7 @@ struct CameraBle::Impl {
     }
 
     // Runs on the Bluetooth stack's thread: parse, answer camera requests, hand over responses.
-    void on_notify(const SimpleBLE::ByteArray& data) {
-        const std::vector<std::uint8_t> bytes = data;
+    void on_notify(const Bytes& bytes) {
         std::vector<duml::Frame> frames;
         {
             std::lock_guard lock(mutex);
@@ -161,100 +159,73 @@ CameraBle::CameraBle(Log log) : impl_(std::make_unique<Impl>()) {
 
 CameraBle::~CameraBle() { disconnect(); }
 
-bool CameraBle::bluetooth_available() {
-    try {
-        return SimpleBLE::Adapter::bluetooth_enabled() && !SimpleBLE::Adapter::get_adapters().empty();
-    } catch (const std::exception&) {
-        return false;
-    }
-}
+bool CameraBle::bluetooth_available() { return detail::Central::create() != nullptr; }
 
 std::optional<Camera> CameraBle::find_camera(std::chrono::milliseconds timeout, const std::string& address) {
-    auto adapters = SimpleBLE::Adapter::get_adapters();
-    if (adapters.empty()) {
-        impl_->say("no Bluetooth adapter");
+    impl_->central = detail::Central::create();
+    if (!impl_->central) {
+        impl_->say("Bluetooth is off or there is no Bluetooth adapter");
         return std::nullopt;
     }
-    impl_->adapter = adapters.front();
-    std::mutex found_mutex;
-    std::condition_variable found_changed;
+    const std::string wanted = detail::normalize_address(address);
     std::optional<Camera> found;
-    std::optional<SimpleBLE::Peripheral> found_peripheral;
     bool found_preferred = false;
+    std::chrono::steady_clock::time_point preferred_since;
     // Takes the first DJI camera seen; a camera with the preferred address replaces it.
-    auto consider = [&](SimpleBLE::Peripheral peripheral) {
-        const auto data = peripheral.manufacturer_data();
-        const auto dji = data.find(kDjiCompanyId);
-        if (dji == data.end()) {
-            return;
+    impl_->central->scan(timeout, [&](const detail::Advertisement& seen) {
+        const auto dji = seen.manufacturer_data.find(kDjiCompanyId);
+        if (dji == seen.manufacturer_data.end()) {
+            return false;
         }
-        const bool preferred = address.empty() || peripheral.address() == address;
-        std::lock_guard lock(found_mutex);
-        if (found && (found_preferred || !preferred)) {
-            return;
+        const bool preferred = wanted.empty() || seen.address == wanted;
+        if (!found || (preferred && !found_preferred) || found->address == seen.address) {
+            if (preferred && !found_preferred) {
+                preferred_since = std::chrono::steady_clock::now();
+            }
+            found = Camera{seen.name, seen.address, seen.rssi, dji->second.empty() ? std::uint8_t{0} : dji->second[0]};
+            found_preferred = preferred;
         }
-        found = Camera{peripheral.identifier(), peripheral.address(), peripheral.rssi(),
-                       dji->second.empty() ? std::uint8_t{0} : dji->second.data()[0]};
-        found_peripheral = peripheral;
-        found_preferred = preferred;
-        found_changed.notify_all();
-    };
-    impl_->adapter->set_callback_on_scan_found(consider);
-    impl_->adapter->set_callback_on_scan_updated(consider);
-    impl_->adapter->scan_start();
-    {
-        std::unique_lock lock(found_mutex);
-        found_changed.wait_for(lock, timeout, [&] { return found_preferred; });
-    }
-    impl_->adapter->scan_stop();
-    impl_->adapter->set_callback_on_scan_found(nullptr);
-    impl_->adapter->set_callback_on_scan_updated(nullptr);
-    std::lock_guard lock(found_mutex);
+        // The name arrives in a separate scan response: give it a moment.
+        return found_preferred && (!found->name.empty() || std::chrono::steady_clock::now() - preferred_since > kNameWait);
+    });
     if (found) {
-        impl_->peripheral = found_peripheral;
+        impl_->scanned_address = found->address;
     }
     return found;
 }
 
 bool CameraBle::connect(const Camera& camera) {
-    if (!impl_->peripheral || impl_->peripheral->address() != camera.address) {
+    if (!impl_->central || impl_->scanned_address != camera.address) {
         impl_->say("camera not scanned");
         return false;
     }
-    try {
-        impl_->peripheral->connect();
-        impl_->start_writer();
-        impl_->peripheral->notify(kService, kNotify, [this](SimpleBLE::ByteArray data) { impl_->on_notify(data); });
-        try {
-            impl_->peripheral->notify(kService, kWrite, [this](SimpleBLE::ByteArray data) { impl_->on_notify(data); });
-        } catch (const std::exception&) {
-            // the write characteristic may not support notifications
-        }
-        // Writing 01 00 to the notify characteristic arms pairing on DJI cameras.
-        impl_->peripheral->write_request(kService, kNotify, SimpleBLE::ByteArray({0x01, 0x00}));
-        std::this_thread::sleep_for(200ms);
-        return true;
-    } catch (const std::exception& error) {
-        impl_->say(std::string("connect failed: ") + error.what());
+    std::string error;
+    impl_->link = impl_->central->connect(camera.address, &error);
+    if (!impl_->link) {
+        impl_->say("connect failed: " + error);
         return false;
     }
+    impl_->start_writer();
+    auto on_notify = [impl = impl_.get()](const Bytes& data) { impl->on_notify(data); };
+    if (!impl_->link->subscribe(kService, kNotify, on_notify)) {
+        impl_->say("connect failed: the camera's notify characteristic is missing");
+        disconnect();
+        return false;
+    }
+    impl_->link->subscribe(kService, kWrite, on_notify);  // may not support notifications
+    // Writing 01 00 to the notify characteristic arms pairing on DJI cameras.
+    impl_->link->write(kService, kNotify, {0x01, 0x00}, true);
+    std::this_thread::sleep_for(200ms);
+    return true;
 }
 
-bool CameraBle::connected() const {
-    try {
-        return impl_->peripheral && impl_->peripheral->is_connected();
-    } catch (const std::exception&) {
-        return false;
-    }
-}
+bool CameraBle::connected() const { return impl_->link && impl_->link->connected(); }
 
 void CameraBle::disconnect() {
-    impl_->writer = {};
-    try {
-        if (impl_->peripheral && impl_->peripheral->is_connected()) {
-            impl_->peripheral->disconnect();
-        }
-    } catch (const std::exception&) {
+    impl_->writer = {};  // stops and joins the writer before the link goes away
+    if (impl_->link) {
+        impl_->link->disconnect();
+        impl_->link.reset();
     }
 }
 
@@ -303,6 +274,34 @@ std::optional<WifiCredentials> CameraBle::wake_wifi() {
 void CameraBle::keepalive() {
     impl_->send(duml::Frame{duml::kAddrApp, duml::kAddrSession, impl_->next_seq++, duml::kFlagRequest, 0x00, 0x2B,
                             {0x01, 0x01}});
+}
+
+std::string detail::normalize_address(std::string address) {
+    std::transform(address.begin(), address.end(), address.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return address;
+}
+
+std::vector<NearbyDevice> scan_nearby(std::chrono::milliseconds duration) {
+    const auto central = detail::Central::create();
+    if (!central) {
+        return {};
+    }
+    std::map<std::string, NearbyDevice> devices;
+    central->scan(duration, [&](const detail::Advertisement& seen) {
+        NearbyDevice& device = devices[seen.address];
+        device = NearbyDevice{seen.name, seen.address, seen.rssi, std::nullopt};
+        if (const auto dji = seen.manufacturer_data.find(kDjiCompanyId); dji != seen.manufacturer_data.end()) {
+            device.dji_model = dji->second.empty() ? std::uint8_t{0} : dji->second[0];
+        }
+        return false;  // keep listening for the whole duration
+    });
+    std::vector<NearbyDevice> out;
+    for (auto& [address, device] : devices) {
+        out.push_back(std::move(device));
+    }
+    std::sort(out.begin(), out.end(), [](const NearbyDevice& a, const NearbyDevice& b) { return a.rssi > b.rssi; });
+    return out;
 }
 
 std::string make_identifier() {
