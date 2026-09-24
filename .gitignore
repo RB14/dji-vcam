@@ -16,3 +16,12 @@ firmware/*/sdkconfig.old
 
 # Raw flash dumps
 firmware/backups/
+
+# Installer and packaged app outputs (only the packaging scripts are committed)
+binaries/
+
+# App build trees
+app/build*/
+
+# Tool logs
+aqtinstall.log
