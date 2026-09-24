@@ -44,6 +44,7 @@ OutputBaseFilename=dji-vcam-setup-{#AppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\..\gui\resources\dji-vcam.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
 ; Close a running DJI VCam before replacing its files.

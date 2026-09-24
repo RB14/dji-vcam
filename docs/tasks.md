@@ -34,7 +34,7 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       Start-menu entry, uninstaller); output `binaries/dji-vcam-setup-<version>.exe` (git-ignored)
       - [x] Installer script, packaging, app-local Visual C++ runtime
       - [ ] Test install, upgrade and uninstall (needs an administrator prompt)
-      - [ ] App icon
+      - [x] App icon (exe, windows, installer) and version info
 - [ ] **Replace SimpleBLE** (BUSL-1.1) with our own Bluetooth code: C++/WinRT on Windows, BlueZ
       over D-Bus on Linux, so the project stays freely licensable
 - [ ] **Rename** the repository folder and gdrive remote to `dji-vcam` (end of a session)

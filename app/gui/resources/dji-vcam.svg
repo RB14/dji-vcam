@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- DJI VCam app icon: an action camera with a "live" light. Source for dji-vcam.ico
+       (app/scripts/make-icon.sh). Plain shapes only, so any SVG renderer draws it the same. -->
+  <rect x="8" y="8" width="240" height="240" rx="52" ry="52" fill="#1e293b"/>
+  <rect x="40" y="72" width="176" height="128" rx="26" ry="26" fill="#e2e8f0"/>
+  <rect x="58" y="90" width="44" height="26" rx="7" ry="7" fill="#94a3b8"/>
+  <circle cx="146" cy="136" r="46" fill="#0f172a"/>
+  <circle cx="146" cy="136" r="32" fill="#0369a1"/>
+  <circle cx="146" cy="136" r="18" fill="#0f172a"/>
+  <circle cx="134" cy="124" r="7" fill="#e0f2fe"/>
+  <circle cx="204" cy="52" r="20" fill="#ef4444"/>
+</svg>
