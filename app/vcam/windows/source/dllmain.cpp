@@ -12,7 +12,7 @@
 GUID CLSID_VCam = { 0x87c6960c,0x3c27,0x4ce3,{0x85,0x5d,0xc1,0xf9,0x1a,0x42,0x3d,0xf2} };
 HMODULE _hModule;
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved)
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, LPVOID /*lpReserved*/)
 {
 	switch (dwReason)
 	{

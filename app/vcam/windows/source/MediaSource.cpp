@@ -303,7 +303,7 @@ STDMETHODIMP MediaSource::SetD3DManager(IUnknown* pManager)
 }
 
 // IMFGetService
-STDMETHODIMP MediaSource::GetService(REFGUID siid, REFIID iid, LPVOID* ppvObject)
+STDMETHODIMP MediaSource::GetService(REFGUID siid, REFIID iid, LPVOID* /*ppvObject*/)
 {
 	if (iid == __uuidof(IMFDeviceController) || iid == __uuidof(IMFDeviceController2))
 		return MF_E_UNSUPPORTED_SERVICE;

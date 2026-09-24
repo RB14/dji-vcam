@@ -578,7 +578,6 @@ const std::wstring MF_ATTRIBUTE_TYPE_ToString(MF_ATTRIBUTE_TYPE value) { return 
 const std::string WM_ToString(UINT msg) { return ToString(__WM, sizeof(__WM) / sizeof(DWORDAndNameA), msg); }
 const std::wstring VARTYPE_ToString(VARTYPE value)
 {
-	auto type = value & VT_TYPEMASK;
 	auto str = ToString(__VARTYPE, sizeof(__VARTYPE) / sizeof(DWORDAndNameW), value);
 	if (value & VT_VECTOR)
 	{
