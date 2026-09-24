@@ -17,7 +17,7 @@
 #include <string>
 #include <thread>
 
-namespace osmolink {
+namespace djivcam {
 
 enum class SessionState { Stopped, WaitingForRoute, Connecting, Streaming };
 
@@ -85,4 +85,4 @@ private:
     std::jthread thread_;
 };
 
-}  // namespace osmolink
+}  // namespace djivcam

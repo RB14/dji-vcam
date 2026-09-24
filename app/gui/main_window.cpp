@@ -10,7 +10,7 @@
 #include "pipeline.h"
 #include "preview_widget.h"
 
-using osmolink::media::DecoderPreference;
+using djivcam::media::DecoderPreference;
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent),
@@ -21,7 +21,7 @@ MainWindow::MainWindow(QWidget* parent)
       state_label_(new QLabel(tr("stopped"), this)),
       stats_label_(new QLabel(this)),
       decoder_label_(new QLabel(this)) {
-    setWindowTitle(tr("osmolink - DJI Osmo Action live view"));
+    setWindowTitle(tr("DJI VCam - DJI Osmo Action live view"));
     setCentralWidget(preview_);
     resize(1280, 800);
 
@@ -64,7 +64,7 @@ void MainWindow::toggleConnection(bool connect) {
     decoder_choice_->setEnabled(!connect);
     if (connect) {
         const auto decoder = static_cast<DecoderPreference>(decoder_choice_->currentData().toInt());
-        osmolink::SessionConfig config;
+        djivcam::SessionConfig config;
         if (!identifier_.isEmpty()) {
             config.identifier = identifier_.toStdString();
         }

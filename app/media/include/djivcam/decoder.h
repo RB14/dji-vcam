@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace osmolink::media {
+namespace djivcam::media {
 
 // A decoded picture in 32-bit BGRA (the memory layout of Qt's QImage::Format_RGB32).
 struct BgraFrame {
@@ -48,4 +48,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace osmolink::media
+}  // namespace djivcam::media

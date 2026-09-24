@@ -5,8 +5,8 @@
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
-    QApplication::setApplicationName(QStringLiteral("osmolink"));
-    QApplication::setOrganizationName(QStringLiteral("osmolink"));
+    QApplication::setApplicationName(QStringLiteral("dji-vcam"));
+    QApplication::setOrganizationName(QStringLiteral("dji-vcam"));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("DJI Osmo Action live view"));

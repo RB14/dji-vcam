@@ -1,12 +1,12 @@
 // DUML codec against frames captured from DJI Mimo and published by osmosis
 // (same vectors as tools/test_duml.py).
-#include "osmolink/duml.h"
+#include "djivcam/duml.h"
 
 #include <gtest/gtest.h>
 
 #include <string>
 
-namespace osmolink::duml {
+namespace djivcam::duml {
 namespace {
 
 Bytes from_hex(const std::string& hex) {
@@ -75,4 +75,4 @@ TEST(Duml, StreamParserHandlesSplitsAndJunk) {
 }
 
 }  // namespace
-}  // namespace osmolink::duml
+}  // namespace djivcam::duml

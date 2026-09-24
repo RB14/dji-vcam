@@ -15,10 +15,10 @@
 #include <string>
 #include <vector>
 
-#include "osmolink/duml.h"
-#include "osmolink/net.h"
+#include "djivcam/duml.h"
+#include "djivcam/net.h"
 
-namespace osmolink::datalink {
+namespace djivcam::datalink {
 
 using duml::Bytes;
 
@@ -103,4 +103,4 @@ private:
     duml::StreamParser parser_;
 };
 
-}  // namespace osmolink::datalink
+}  // namespace djivcam::datalink

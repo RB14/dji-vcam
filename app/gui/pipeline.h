@@ -14,9 +14,9 @@
 #include <mutex>
 #include <thread>
 
-#include "osmolink/decoder.h"
-#include "osmolink/h264.h"
-#include "osmolink/session.h"
+#include "djivcam/decoder.h"
+#include "djivcam/h264.h"
+#include "djivcam/session.h"
 
 class Pipeline : public QObject {
     Q_OBJECT
@@ -25,7 +25,7 @@ public:
     explicit Pipeline(QObject* parent = nullptr);
     ~Pipeline() override;
 
-    void start(osmolink::SessionConfig config, osmolink::media::DecoderPreference decoder);
+    void start(djivcam::SessionConfig config, djivcam::media::DecoderPreference decoder);
     void stop();
     bool running() const { return session_ != nullptr; }
 
@@ -42,15 +42,15 @@ signals:
     void errorOccurred(const QString& message);
 
 private:
-    void enqueue(osmolink::h264::AccessUnit&& unit);
-    void decode_loop(std::stop_token stop, osmolink::media::DecoderPreference preference);
+    void enqueue(djivcam::h264::AccessUnit&& unit);
+    void decode_loop(std::stop_token stop, djivcam::media::DecoderPreference preference);
     void report_stats();
 
-    std::unique_ptr<osmolink::LiveViewSession> session_;
-    std::unique_ptr<osmolink::h264::AccessUnitAssembler> assembler_;
+    std::unique_ptr<djivcam::LiveViewSession> session_;
+    std::unique_ptr<djivcam::h264::AccessUnitAssembler> assembler_;
     std::mutex mutex_;
     std::condition_variable_any wake_;
-    std::deque<osmolink::h264::AccessUnit> queue_;
+    std::deque<djivcam::h264::AccessUnit> queue_;
     std::jthread decoder_;
     QTimer stats_timer_;
     std::atomic<std::uint64_t> decoded_frames_{0};

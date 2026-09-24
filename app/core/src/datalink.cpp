@@ -1,8 +1,8 @@
-#include "osmolink/datalink.h"
+#include "djivcam/datalink.h"
 
 #include <array>
 
-namespace osmolink::datalink {
+namespace djivcam::datalink {
 namespace {
 
 constexpr std::size_t kStatusFrameLen = 34;
@@ -194,4 +194,4 @@ void Link::settle(int rounds) {
     seq_ = static_cast<std::uint16_t>(camera_channel_ + 8);
 }
 
-}  // namespace osmolink::datalink
+}  // namespace djivcam::datalink

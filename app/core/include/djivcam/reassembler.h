@@ -14,7 +14,7 @@
 #include <span>
 #include <vector>
 
-namespace osmolink {
+namespace djivcam {
 
 struct ReassemblerStats {
     std::uint64_t delivered = 0;
@@ -57,4 +57,4 @@ private:
     ReassemblerStats stats_;
 };
 
-}  // namespace osmolink
+}  // namespace djivcam

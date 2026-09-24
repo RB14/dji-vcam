@@ -18,20 +18,20 @@ Pipeline::Pipeline(QObject* parent) : QObject(parent) {
 
 Pipeline::~Pipeline() { stop(); }
 
-void Pipeline::start(osmolink::SessionConfig config, osmolink::media::DecoderPreference decoder) {
+void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPreference decoder) {
     stop();
-    assembler_ = std::make_unique<osmolink::h264::AccessUnitAssembler>(
-        [this](osmolink::h264::AccessUnit&& unit) { enqueue(std::move(unit)); });
+    assembler_ = std::make_unique<djivcam::h264::AccessUnitAssembler>(
+        [this](djivcam::h264::AccessUnit&& unit) { enqueue(std::move(unit)); });
     decoder_ = std::jthread([this, decoder](std::stop_token stop) { decode_loop(stop, decoder); });
 
     auto on_video = [this](std::span<const std::uint8_t> bytes) { assembler_->push(bytes); };
-    auto on_state = [this](osmolink::SessionState state, const std::string& detail) {
-        if (state != osmolink::SessionState::Streaming) {
+    auto on_state = [this](djivcam::SessionState state, const std::string& detail) {
+        if (state != djivcam::SessionState::Streaming) {
             assembler_->reset();
         }
-        emit stateChanged(QString::fromUtf8(osmolink::to_string(state)), QString::fromStdString(detail));
+        emit stateChanged(QString::fromUtf8(djivcam::to_string(state)), QString::fromStdString(detail));
     };
-    session_ = std::make_unique<osmolink::LiveViewSession>(std::move(config), on_video, on_state);
+    session_ = std::make_unique<djivcam::LiveViewSession>(std::move(config), on_video, on_state);
     session_->start();
     decoded_frames_ = 0;
     last_frames_ = 0;
@@ -57,7 +57,7 @@ void Pipeline::stop() {
     assembler_.reset();
 }
 
-void Pipeline::enqueue(osmolink::h264::AccessUnit&& unit) {
+void Pipeline::enqueue(djivcam::h264::AccessUnit&& unit) {
     {
         std::lock_guard lock(mutex_);
         if (queue_.size() >= kMaxQueuedUnits) {
@@ -68,10 +68,10 @@ void Pipeline::enqueue(osmolink::h264::AccessUnit&& unit) {
     wake_.notify_one();
 }
 
-void Pipeline::decode_loop(std::stop_token stop, osmolink::media::DecoderPreference preference) {
-    std::unique_ptr<osmolink::media::H264Decoder> decoder;
+void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreference preference) {
+    std::unique_ptr<djivcam::media::H264Decoder> decoder;
     try {
-        decoder = std::make_unique<osmolink::media::H264Decoder>(preference);
+        decoder = std::make_unique<djivcam::media::H264Decoder>(preference);
     } catch (const std::exception& error) {
         emit errorOccurred(QString::fromUtf8(error.what()));
         return;
@@ -79,7 +79,7 @@ void Pipeline::decode_loop(std::stop_token stop, osmolink::media::DecoderPrefere
     emit decoderChanged(QString::fromStdString(decoder->backend()), decoder->hardware());
 
     while (!stop.stop_requested()) {
-        osmolink::h264::AccessUnit unit;
+        djivcam::h264::AccessUnit unit;
         {
             std::unique_lock lock(mutex_);
             if (!wake_.wait(lock, stop, [this] { return !queue_.empty(); })) {

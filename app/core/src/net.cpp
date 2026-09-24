@@ -1,4 +1,4 @@
-#include "osmolink/net.h"
+#include "djivcam/net.h"
 
 #include <cstddef>
 #include <thread>
@@ -19,7 +19,7 @@ using SocketHandle = int;
 constexpr SocketHandle kInvalidSocket = -1;
 #endif
 
-namespace osmolink::net {
+namespace djivcam::net {
 namespace {
 
 void ensure_sockets_initialized() {
@@ -187,4 +187,4 @@ std::optional<std::size_t> UdpSocket::receive(std::span<std::uint8_t> buffer, st
     return static_cast<std::size_t>(got);
 }
 
-}  // namespace osmolink::net
+}  // namespace djivcam::net

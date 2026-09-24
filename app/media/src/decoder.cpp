@@ -1,4 +1,4 @@
-#include "osmolink/decoder.h"
+#include "djivcam/decoder.h"
 
 #include <stdexcept>
 
@@ -9,7 +9,7 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-namespace osmolink::media {
+namespace djivcam::media {
 namespace {
 
 constexpr AVHWDeviceType kGpuBackends[] = {
@@ -174,4 +174,4 @@ std::optional<BgraFrame> H264Decoder::decode(std::span<const std::uint8_t> acces
     return latest;
 }
 
-}  // namespace osmolink::media
+}  // namespace djivcam::media

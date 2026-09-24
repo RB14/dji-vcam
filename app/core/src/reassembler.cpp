@@ -1,8 +1,8 @@
-#include "osmolink/reassembler.h"
+#include "djivcam/reassembler.h"
 
 #include <algorithm>
 
-namespace osmolink {
+namespace djivcam {
 
 VideoReassembler::VideoReassembler(Deliver deliver, std::chrono::milliseconds gap_timeout)
     : deliver_(std::move(deliver)), gap_timeout_(gap_timeout) {}
@@ -77,4 +77,4 @@ std::optional<std::uint16_t> VideoReassembler::ack_seq() const {
     return static_cast<std::uint16_t>(*expected_ - kSeqStep);
 }
 
-}  // namespace osmolink
+}  // namespace djivcam

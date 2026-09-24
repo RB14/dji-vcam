@@ -1,6 +1,6 @@
-// osmolink-cli: runs a live-view session without the GUI and prints its progress.
+// dji-vcam-cli: runs a live-view session without the GUI and prints its progress.
 //
-// Usage: osmolink-cli [--seconds N] [--identifier-file PATH] [--dump PATH]
+// Usage: dji-vcam-cli [--seconds N] [--identifier-file PATH] [--dump PATH]
 //   --identifier-file  file holding the approved pairing identifier (not printed)
 //   --dump             write the received H.264 stream to PATH
 #include <chrono>
@@ -10,7 +10,7 @@
 #include <string>
 #include <thread>
 
-#include "osmolink/session.h"
+#include "djivcam/session.h"
 
 int main(int argc, char* argv[]) {
     using namespace std::chrono;
@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    osmolink::SessionConfig config;
+    djivcam::SessionConfig config;
     if (!identifier_file.empty()) {
         std::ifstream in(identifier_file);
         std::getline(in, config.identifier);
@@ -40,20 +40,20 @@ int main(int argc, char* argv[]) {
 
     const auto start = steady_clock::now();
     auto stamp = [&] { return duration_cast<milliseconds>(steady_clock::now() - start).count() / 1000.0; };
-    osmolink::LiveViewSession session(
+    djivcam::LiveViewSession session(
         config,
         [&](std::span<const std::uint8_t> video) {
             if (dump) {
                 dump.write(reinterpret_cast<const char*>(video.data()), static_cast<std::streamsize>(video.size()));
             }
         },
-        [&](osmolink::SessionState state, const std::string& detail) {
-            std::printf("[%7.3f] state: %s%s%s\n", stamp(), osmolink::to_string(state), detail.empty() ? "" : " - ",
+        [&](djivcam::SessionState state, const std::string& detail) {
+            std::printf("[%7.3f] state: %s%s%s\n", stamp(), djivcam::to_string(state), detail.empty() ? "" : " - ",
                         detail.c_str());
             std::fflush(stdout);
         });
     session.start();
-    osmolink::SessionStats previous{};
+    djivcam::SessionStats previous{};
     for (int second = 0; second < seconds; ++second) {
         std::this_thread::sleep_for(1s);
         const auto stats = session.stats();

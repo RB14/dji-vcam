@@ -23,7 +23,7 @@
 #include <string_view>
 #include <vector>
 
-namespace osmolink::duml {
+namespace djivcam::duml {
 
 using Bytes = std::vector<std::uint8_t>;
 
@@ -80,4 +80,4 @@ private:
     Bytes buffer_;
 };
 
-}  // namespace osmolink::duml
+}  // namespace djivcam::duml

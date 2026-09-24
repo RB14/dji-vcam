@@ -1,13 +1,13 @@
-#include "osmolink/session.h"
+#include "djivcam/session.h"
 
 #include <optional>
 
-#include "osmolink/datalink.h"
-#include "osmolink/duml.h"
-#include "osmolink/net.h"
-#include "osmolink/reassembler.h"
+#include "djivcam/datalink.h"
+#include "djivcam/duml.h"
+#include "djivcam/net.h"
+#include "djivcam/reassembler.h"
 
-namespace osmolink {
+namespace djivcam {
 namespace {
 
 using namespace std::chrono_literals;
@@ -229,4 +229,4 @@ void LiveViewSession::run(std::stop_token stop) {
     }
 }
 
-}  // namespace osmolink
+}  // namespace djivcam

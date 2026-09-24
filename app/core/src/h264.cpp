@@ -1,9 +1,9 @@
-#include "osmolink/h264.h"
+#include "djivcam/h264.h"
 
 #include <algorithm>
 #include <array>
 
-namespace osmolink::h264 {
+namespace djivcam::h264 {
 namespace {
 
 constexpr std::array<std::uint8_t, 3> kStartCode = {0x00, 0x00, 0x01};
@@ -70,4 +70,4 @@ void AccessUnitAssembler::reset() {
     current_ = AccessUnit{};
 }
 
-}  // namespace osmolink::h264
+}  // namespace djivcam::h264

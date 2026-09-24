@@ -1,8 +1,8 @@
-#include "osmolink/reassembler.h"
+#include "djivcam/reassembler.h"
 
 #include <gtest/gtest.h>
 
-namespace osmolink {
+namespace djivcam {
 namespace {
 
 using namespace std::chrono_literals;
@@ -73,4 +73,4 @@ TEST_F(ReassemblerTest, FarJumpIsAStreamRestart) {
 }
 
 }  // namespace
-}  // namespace osmolink
+}  // namespace djivcam

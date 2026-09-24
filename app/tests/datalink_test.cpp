@@ -1,10 +1,10 @@
 // UDP datalink framing against a command packet derived from osmosis
 // (same vector as tools/test_datalink.py).
-#include "osmolink/datalink.h"
+#include "djivcam/datalink.h"
 
 #include <gtest/gtest.h>
 
-namespace osmolink::datalink {
+namespace djivcam::datalink {
 namespace {
 
 std::string to_hex(const Bytes& bytes) {
@@ -41,4 +41,4 @@ TEST(Datalink, SequenceComparisonsWrap) {
 }
 
 }  // namespace
-}  // namespace osmolink::datalink
+}  // namespace djivcam::datalink

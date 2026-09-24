@@ -1,6 +1,6 @@
 # Desktop app: architecture and plan
 
-A small desktop app ("Mimo for Desktop", working name **osmolink**) for Windows and Linux. It
+A small desktop app ("Mimo for Desktop"), **DJI VCam** (`dji-vcam`), for Windows and Linux. It
 connects to a DJI Osmo Action camera over its own Wi-Fi, shows the live view, and exposes it as a
 **virtual camera**, so any application (OBS, Zoom, Teams, Discord, browsers) can use the feed.
 
@@ -71,8 +71,8 @@ fans decoded frames out to the preview and the virtual camera.
    (ESP32 bridge / Wi-Fi adapter), using the virtual camera in OBS and other apps.
 3. **Installer**: scripted packaging (Windows installer; Linux package/AppImage). Outputs go to
    `binaries/`, which is git-ignored; only the packaging scripts are committed.
-4. **Rename the project** to `dji-vcam` (repository folder, gdrive remote, app/target
-   names, C++ namespace), as its own step once milestone 1 is done.
+4. **Rename the project** to `dji-vcam`. Done for the app, targets and C++ namespace (`djivcam`);
+   the repository folder and gdrive remote still to be renamed.
 
 ## Open questions
 

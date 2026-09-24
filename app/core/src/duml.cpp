@@ -1,9 +1,9 @@
-#include "osmolink/duml.h"
+#include "djivcam/duml.h"
 
 #include <array>
 #include <cstdio>
 
-namespace osmolink::duml {
+namespace djivcam::duml {
 namespace {
 
 constexpr std::uint16_t kVersionBits = 0x0400;
@@ -163,4 +163,4 @@ std::vector<Frame> StreamParser::feed(std::span<const std::uint8_t> data) {
     return frames;
 }
 
-}  // namespace osmolink::duml
+}  // namespace djivcam::duml

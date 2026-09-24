@@ -10,7 +10,7 @@
 #include <span>
 #include <vector>
 
-namespace osmolink::h264 {
+namespace djivcam::h264 {
 
 using Bytes = std::vector<std::uint8_t>;
 
@@ -46,4 +46,4 @@ private:
     AccessUnit current_;
 };
 
-}  // namespace osmolink::h264
+}  // namespace djivcam::h264

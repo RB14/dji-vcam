@@ -5,9 +5,9 @@
 # to a Windows-local folder first and built there with the Visual Studio 2022 generator.
 #
 # Usage: app/scripts/build-windows.sh [Debug|Release] [extra cmake -D options...]
-# Env:   OSMOLINK_WIN_ROOT  Windows-side work folder (default %LOCALAPPDATA%\osmolink)
+# Env:   DJIVCAM_WIN_ROOT  Windows-side work folder (default %LOCALAPPDATA%\dji-vcam)
 #        QT_DIR             Qt MSVC kit (default %USERPROFILE%\Qt\6.8.3\msvc2022_64)
-#        FFMPEG_DIR         FFmpeg shared dev build (default %LOCALAPPDATA%\osmolink\deps\ffmpeg)
+#        FFMPEG_DIR         FFmpeg shared dev build (default %LOCALAPPDATA%\dji-vcam\deps\ffmpeg)
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,7 +15,7 @@ CONFIG="${1:-Debug}"
 shift || true
 
 win_env() { powershell.exe -NoProfile -Command "\$env:$1" | tr -d '\r'; }
-WIN_ROOT="${OSMOLINK_WIN_ROOT:-$(win_env LOCALAPPDATA)\\osmolink}"
+WIN_ROOT="${DJIVCAM_WIN_ROOT:-$(win_env LOCALAPPDATA)\\dji-vcam}"
 QT_DIR="${QT_DIR:-$(win_env USERPROFILE)\\Qt\\6.8.3\\msvc2022_64}"
 FFMPEG_DIR="${FFMPEG_DIR:-$WIN_ROOT\\deps\\ffmpeg}"
 SRC_WIN="$WIN_ROOT\\src"

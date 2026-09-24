@@ -7,7 +7,7 @@
 #include <span>
 #include <string>
 
-namespace osmolink::net {
+namespace djivcam::net {
 
 // Local IPv4 address the OS would use to reach `ip` (no packets are sent).
 std::optional<std::string> local_ip_towards(const std::string& ip, std::uint16_t port);
@@ -38,4 +38,4 @@ private:
     std::intptr_t handle_ = -1;
 };
 
-}  // namespace osmolink::net
+}  // namespace djivcam::net

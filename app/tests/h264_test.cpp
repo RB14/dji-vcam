@@ -1,8 +1,8 @@
-#include "osmolink/h264.h"
+#include "djivcam/h264.h"
 
 #include <gtest/gtest.h>
 
-namespace osmolink::h264 {
+namespace djivcam::h264 {
 namespace {
 
 // One NAL unit with a 4-byte start code.
@@ -44,4 +44,4 @@ TEST(AccessUnitAssembler, SplitsAtAudDropsDjiUnitsAndFlagsKeyframes) {
 }
 
 }  // namespace
-}  // namespace osmolink::h264
+}  // namespace djivcam::h264
