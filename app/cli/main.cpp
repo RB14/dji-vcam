@@ -1,30 +1,55 @@
-// dji-vcam-cli: runs a live-view session without the GUI and prints its progress.
+// dji-vcam-cli: runs the camera connection without the GUI and prints its progress.
 //
-// Usage: dji-vcam-cli [--seconds N] [--identifier-file PATH] [--dump PATH]
-//   --identifier-file  file holding the approved pairing identifier (not printed)
+// Usage: dji-vcam-cli [--ble] [--seconds N] [--identifier-file PATH] [--dump PATH]
+//   --ble              wake the camera's Wi-Fi over Bluetooth first and keep the BLE link alive
+//   --identifier-file  file holding the approved pairing identifier (never printed)
 //   --dump             write the received H.264 stream to PATH
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <thread>
 
 #include "djivcam/session.h"
 
+#ifdef DJIVCAM_HAVE_BLE
+#include "djivcam/camera_ble.h"
+#endif
+
+namespace {
+
+using namespace std::chrono;
+
+const auto g_start = steady_clock::now();
+
+void say(const std::string& message) {
+    std::printf("[%7.3f] %s\n", duration_cast<milliseconds>(steady_clock::now() - g_start).count() / 1000.0,
+                message.c_str());
+    std::fflush(stdout);
+}
+
+}  // namespace
+
 int main(int argc, char* argv[]) {
-    using namespace std::chrono;
     int seconds = 20;
+    bool use_ble = false;
     std::string identifier_file;
     std::string dump_path;
-    for (int i = 1; i + 1 < argc; i += 2) {
+    for (int i = 1; i < argc; ++i) {
         const std::string flag = argv[i];
-        if (flag == "--seconds") {
-            seconds = std::stoi(argv[i + 1]);
-        } else if (flag == "--identifier-file") {
-            identifier_file = argv[i + 1];
-        } else if (flag == "--dump") {
-            dump_path = argv[i + 1];
+        const bool has_value = i + 1 < argc;
+        if (flag == "--ble") {
+            use_ble = true;
+        } else if (flag == "--seconds" && has_value) {
+            seconds = std::stoi(argv[++i]);
+        } else if (flag == "--identifier-file" && has_value) {
+            identifier_file = argv[++i];
+        } else if (flag == "--dump" && has_value) {
+            dump_path = argv[++i];
+        } else {
+            std::fprintf(stderr, "unknown argument: %s\n", flag.c_str());
+            return 2;
         }
     }
 
@@ -33,13 +58,53 @@ int main(int argc, char* argv[]) {
         std::ifstream in(identifier_file);
         std::getline(in, config.identifier);
     }
+
+#ifdef DJIVCAM_HAVE_BLE
+    std::optional<djivcam::ble::CameraBle> camera;
+    std::jthread keepalive;
+    if (use_ble) {
+        camera.emplace([](const std::string& message) { say("ble: " + message); });
+        say("searching for the camera over Bluetooth (wake it up if it is asleep)");
+        const auto found = camera->find_camera(60s);
+        if (!found) {
+            say("no DJI camera found");
+            return 1;
+        }
+        say("found '" + found->name + "' " + found->address + " rssi " + std::to_string(found->rssi) + " model " +
+            std::to_string(found->model));
+        if (!camera->connect(*found)) {
+            return 1;
+        }
+        const auto paired = camera->pair(config.identifier, config.token, 60s,
+                                         [] { say(">>> approve the pairing prompt on the camera screen <<<"); });
+        if (paired == djivcam::ble::PairResult::TimedOut || paired == djivcam::ble::PairResult::Failed) {
+            say("pairing failed");
+            return 1;
+        }
+        say(paired == djivcam::ble::PairResult::AlreadyPaired ? "already paired" : "pairing approved");
+        const auto credentials = camera->wake_wifi();
+        if (!credentials) {
+            return 1;
+        }
+        say("camera Wi-Fi is up: '" + credentials->ssid + "' (password not shown)");
+        keepalive = std::jthread([&camera](std::stop_token stop) {
+            while (!stop.stop_requested()) {
+                camera->keepalive();
+                std::this_thread::sleep_for(1s);
+            }
+        });
+    }
+#else
+    if (use_ble) {
+        std::fprintf(stderr, "built without Bluetooth support\n");
+        return 2;
+    }
+#endif
+
     std::ofstream dump;
     if (!dump_path.empty()) {
         dump.open(dump_path, std::ios::binary);
     }
-
-    const auto start = steady_clock::now();
-    auto stamp = [&] { return duration_cast<milliseconds>(steady_clock::now() - start).count() / 1000.0; };
     djivcam::LiveViewSession session(
         config,
         [&](std::span<const std::uint8_t> video) {
@@ -47,23 +112,24 @@ int main(int argc, char* argv[]) {
                 dump.write(reinterpret_cast<const char*>(video.data()), static_cast<std::streamsize>(video.size()));
             }
         },
-        [&](djivcam::SessionState state, const std::string& detail) {
-            std::printf("[%7.3f] state: %s%s%s\n", stamp(), djivcam::to_string(state), detail.empty() ? "" : " - ",
-                        detail.c_str());
-            std::fflush(stdout);
+        [](djivcam::SessionState state, const std::string& detail) {
+            say(std::string("state: ") + djivcam::to_string(state) + (detail.empty() ? "" : " - " + detail));
         });
     session.start();
     djivcam::SessionStats previous{};
     for (int second = 0; second < seconds; ++second) {
         std::this_thread::sleep_for(1s);
         const auto stats = session.stats();
-        std::printf("[%7.3f] datagrams +%llu, video +%llu (%.0f kbit/s), lost %llu, recovered %llu, dup %llu, reconnects %llu\n",
-                    stamp(), static_cast<unsigned long long>(stats.datagrams - previous.datagrams),
-                    static_cast<unsigned long long>(stats.video_datagrams - previous.video_datagrams),
-                    static_cast<double>(stats.video_bytes - previous.video_bytes) * 8 / 1000,
-                    static_cast<unsigned long long>(stats.lost), static_cast<unsigned long long>(stats.recovered),
-                    static_cast<unsigned long long>(stats.duplicates), static_cast<unsigned long long>(stats.reconnects));
-        std::fflush(stdout);
+        char line[200];
+        std::snprintf(line, sizeof(line),
+                      "datagrams +%llu, video +%llu (%.0f kbit/s), lost %llu, recovered %llu, dup %llu, reconnects %llu",
+                      static_cast<unsigned long long>(stats.datagrams - previous.datagrams),
+                      static_cast<unsigned long long>(stats.video_datagrams - previous.video_datagrams),
+                      static_cast<double>(stats.video_bytes - previous.video_bytes) * 8 / 1000,
+                      static_cast<unsigned long long>(stats.lost), static_cast<unsigned long long>(stats.recovered),
+                      static_cast<unsigned long long>(stats.duplicates),
+                      static_cast<unsigned long long>(stats.reconnects));
+        say(line);
         previous = stats;
     }
     session.stop();

@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(DJIVCAM_BUILD_TESTS "Build the unit tests" ON)
 option(DJIVCAM_BUILD_GUI "Build the Qt desktop app" OFF)
+option(DJIVCAM_WITH_BLE "Build Bluetooth LE support (SimpleBLE)" ${DJIVCAM_BUILD_GUI})
 
 if(MSVC)
     add_compile_options(/W4 /permissive- /utf-8)
@@ -15,6 +16,9 @@ else()
 endif()
 
 add_subdirectory(core)
+if(DJIVCAM_WITH_BLE)
+    add_subdirectory(ble)
+endif()
 add_subdirectory(cli)
 
 if(DJIVCAM_BUILD_TESTS)
