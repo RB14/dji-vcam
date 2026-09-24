@@ -67,3 +67,4 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       duplicate counters in the status bar
 - [x] NV12 end to end with GPU color conversion in the preview (decode thread 6.9 -> 2.8 ms per
       frame; fixes BT.601 colors on the camera's BT.709 stream)
+- [x] Snapshot button (PNG of the current frame in Pictures\DJI VCam)

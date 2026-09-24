@@ -76,6 +76,11 @@ To remove the component installed by the portable app, run in an administrator p
 `regsvr32 /u "C:\ProgramData\DJI VCam\djivcam-source.dll"`, then delete that folder. (The
 installer's uninstaller does this by itself.)
 
+## Snapshots
+
+**Snapshot** in the toolbar saves the current frame of the live view, at the camera's resolution,
+as a PNG in `Pictures\DJI VCam`.
+
 ## Options
 
 - **Decoder**: *auto* uses your GPU when possible (shown as e.g. `d3d11va (GPU)`), *CPU* forces

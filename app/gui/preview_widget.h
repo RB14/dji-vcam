@@ -3,6 +3,7 @@
 // drawing, so neither the color conversion nor the scaling to the window costs CPU time.
 #pragma once
 
+#include <QImage>
 #include <QOpenGLBuffer>
 #include <QOpenGLFunctions>
 #include <QOpenGLShaderProgram>
@@ -23,6 +24,9 @@ public:
 
     void showFrame(Frame frame);
     void clear();
+    // The current frame at its own resolution, drawn by the same shader as the preview (null
+    // without video).
+    QImage snapshot();
 
 protected:
     void initializeGL() override;
@@ -30,6 +34,8 @@ protected:
 
 private:
     void upload();
+    // Draws the frame over the whole current viewport.
+    void draw_frame();
     void release_gl();
 
     Frame frame_;

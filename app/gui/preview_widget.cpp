@@ -1,6 +1,7 @@
 #include "preview_widget.h"
 
 #include <QGenericMatrix>
+#include <QOpenGLFramebufferObject>
 #include <QPainter>
 #include <QVector3D>
 
@@ -153,7 +154,28 @@ void PreviewWidget::paintGL() {
     const QSize area(qRound(width() * ratio), qRound(height() * ratio));
     const QSize fitted = QSize(frame_->width, frame_->height).scaled(area, Qt::KeepAspectRatio);
     glViewport((area.width() - fitted.width()) / 2, (area.height() - fitted.height()) / 2, fitted.width(), fitted.height());
+    draw_frame();
+}
 
+QImage PreviewWidget::snapshot() {
+    if (!frame_ || !textures_[0]) {
+        return {};
+    }
+    makeCurrent();
+    if (!uploaded_) {
+        upload();
+    }
+    QOpenGLFramebufferObject target(frame_->width, frame_->height);
+    target.bind();
+    glViewport(0, 0, frame_->width, frame_->height);
+    draw_frame();
+    QImage image = target.toImage();
+    target.release();
+    doneCurrent();
+    return image;
+}
+
+void PreviewWidget::draw_frame() {
     program_.bind();
     program_.setUniformValue("luma", 0);
     program_.setUniformValue("chroma", 1);

@@ -16,8 +16,10 @@
 #include <algorithm>
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QStandardPaths>
 
 #include <chrono>
 
@@ -101,6 +103,10 @@ MainWindow::MainWindow(QWidget* parent)
     toolbar->addSeparator();
     toolbar->addWidget(decoder_choice_);
     toolbar->addWidget(options_button);
+    toolbar->addSeparator();
+    auto* snapshot_action = toolbar->addAction(tr("Snapshot"));
+    snapshot_action->setToolTip(tr("Save the current frame as a picture in Pictures\\DJI VCam"));
+    connect(snapshot_action, &QAction::triggered, this, &MainWindow::saveSnapshot);
     toolbar->addSeparator();
     vcam_action_->setCheckable(true);
     vcam_action_->setToolTip(tr("Offer the live view as the \"DJI VCam\" webcam to OBS, Zoom, browsers and other apps"));
@@ -196,6 +202,22 @@ void MainWindow::enableVirtualCamera(bool on) {
 #else
     (void)on;
 #endif
+}
+
+void MainWindow::saveSnapshot() {
+    const QImage image = preview_->snapshot();
+    if (image.isNull()) {
+        statusBar()->showMessage(tr("No video to save"), 4000);
+        return;
+    }
+    const QDir folder(QStandardPaths::writableLocation(QStandardPaths::PicturesLocation) + QStringLiteral("/DJI VCam"));
+    const QString path =
+        folder.filePath(QStringLiteral("dji-vcam-%1.png").arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss-zzz"))));
+    if (!folder.mkpath(QStringLiteral(".")) || !image.save(path)) {
+        statusBar()->showMessage(tr("Could not save the snapshot to %1").arg(QDir::toNativeSeparators(folder.path())), 6000);
+        return;
+    }
+    statusBar()->showMessage(tr("Snapshot saved: %1").arg(QDir::toNativeSeparators(path)), 6000);
 }
 
 void MainWindow::updateVirtualCameraStatus() {

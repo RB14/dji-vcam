@@ -42,6 +42,8 @@ private:
     void showStage(const QString& text, bool attention = false);
     QString pairingIdentifier();
     void enableVirtualCamera(bool on);
+    // Saves the current live-view frame as a PNG in Pictures\DJI VCam.
+    void saveSnapshot();
     void updateVirtualCameraStatus();
 
     QSettings* settings_;
