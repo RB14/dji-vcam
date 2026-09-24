@@ -16,7 +16,9 @@
 namespace djivcam::vcam {
 namespace {
 
-constexpr ULONGLONG kReopenIntervalMs = 1000;
+// How often to look for the section the camera service creates when an app opens the webcam (it
+// shows its gray "no signal" picture until the app has found it).
+constexpr ULONGLONG kReopenIntervalMs = 250;
 
 std::string hresult_text(const char* what, HRESULT hr) {
     char text[96];
