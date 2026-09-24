@@ -23,7 +23,7 @@ public:
 private:
     void toggleConnection(bool connect);
     void onStateChanged(const QString& state, const QString& detail);
-    void onStats(double fps, double kbps, double loss_percent, quint64 reconnects);
+    void onStats(double fps, double kbps, double loss_percent, quint64 recovered, quint64 reconnects);
     void onDecoder(const QString& backend, bool hardware);
 
     QString identifier_;
@@ -32,6 +32,7 @@ private:
     QAction* connect_action_;
     QComboBox* decoder_choice_;
     QLabel* state_label_;
+    QLabel* format_label_;
     QLabel* stats_label_;
     QLabel* decoder_label_;
 };

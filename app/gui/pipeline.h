@@ -37,7 +37,9 @@ signals:
     // UI skips frames instead of queueing them (which would add ever-growing latency).
     void frameAvailable();
     void stateChanged(const QString& state, const QString& detail);
-    void statsUpdated(double fps, double kbps, double loss_percent, quint64 reconnects);
+    void statsUpdated(double fps, double kbps, double loss_percent, quint64 recovered, quint64 reconnects);
+    // Size of the decoded video (changes e.g. 1280x720 -> 960x720 with the camera's aspect ratio).
+    void formatChanged(int width, int height);
     void decoderChanged(const QString& backend, bool hardware);
     void errorOccurred(const QString& message);
 
@@ -61,4 +63,6 @@ private:
     std::uint64_t last_video_bytes_ = 0;
     std::uint64_t last_video_datagrams_ = 0;
     std::uint64_t last_lost_ = 0;
+    int width_ = 0;   // decode thread only
+    int height_ = 0;
 };

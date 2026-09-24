@@ -34,6 +34,7 @@ void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPrefe
     session_ = std::make_unique<djivcam::LiveViewSession>(std::move(config), on_video, on_state);
     session_->start();
     decoded_frames_ = 0;
+    width_ = height_ = 0;
     last_frames_ = 0;
     last_video_bytes_ = 0;
     last_video_datagrams_ = 0;
@@ -90,6 +91,11 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
         }
         if (auto frame = decoder->decode(unit.data)) {
             ++decoded_frames_;
+            if (frame->width != width_ || frame->height != height_) {
+                width_ = frame->width;
+                height_ = frame->height;
+                emit formatChanged(width_, height_);
+            }
             QImage image(frame->pixels.data(), frame->width, frame->height, frame->stride, QImage::Format_RGB32);
             bool notify = false;
             {
@@ -126,5 +132,5 @@ void Pipeline::report_stats() {
     last_video_bytes_ = stats.video_bytes;
     last_video_datagrams_ = stats.video_datagrams;
     last_lost_ = stats.lost;
-    emit statsUpdated(fps, kbps, loss_percent, stats.reconnects);
+    emit statsUpdated(fps, kbps, loss_percent, stats.recovered, stats.reconnects);
 }
