@@ -5,6 +5,7 @@
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -24,6 +25,44 @@ static volatile bool s_configured;
 static volatile bool s_connected;
 static volatile bool s_scanning;
 static uint32_t s_reconnects;
+static uint32_t s_drops;
+static int64_t s_connected_since_us;
+static wifi_link_drop_t s_history[WIFI_LINK_HISTORY];  /* ring buffer */
+static uint8_t s_history_next;
+static uint8_t s_history_len;
+
+static uint32_t uptime_s(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000000);
+}
+
+static void record_drop(uint16_t reason)
+{
+    s_history[s_history_next] = (wifi_link_drop_t){.reason = reason, .uptime_s = uptime_s()};
+    s_history_next = (s_history_next + 1) % WIFI_LINK_HISTORY;
+    if (s_history_len < WIFI_LINK_HISTORY) {
+        s_history_len++;
+    }
+    s_drops++;
+}
+
+const char *wifi_link_reason_name(uint16_t reason)
+{
+    switch (reason) {
+    case WIFI_REASON_AUTH_EXPIRE: return "AUTH_EXPIRE";
+    case WIFI_REASON_AUTH_LEAVE: return "AUTH_LEAVE";
+    case WIFI_REASON_ASSOC_EXPIRE: return "ASSOC_EXPIRE";
+    case WIFI_REASON_ASSOC_LEAVE: return "ASSOC_LEAVE";
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT: return "4WAY_HANDSHAKE_TIMEOUT";
+    case WIFI_REASON_BEACON_TIMEOUT: return "BEACON_TIMEOUT";
+    case WIFI_REASON_NO_AP_FOUND: return "NO_AP_FOUND";
+    case WIFI_REASON_AUTH_FAIL: return "AUTH_FAIL";
+    case WIFI_REASON_ASSOC_FAIL: return "ASSOC_FAIL";
+    case WIFI_REASON_HANDSHAKE_TIMEOUT: return "HANDSHAKE_TIMEOUT";
+    case WIFI_REASON_CONNECTION_FAIL: return "CONNECTION_FAIL";
+    default: return "other";
+    }
+}
 
 static esp_err_t load_credentials(void)
 {
@@ -62,14 +101,18 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
         const wifi_event_sta_connected_t *ev = data;
         ESP_LOGI(TAG, "connected to '%.*s' on channel %u", ev->ssid_len, ev->ssid, ev->channel);
         s_connected = true;
+        s_connected_since_us = esp_timer_get_time();
         bridge_set_wifi_link(true);
     } else if (id == WIFI_EVENT_STA_DISCONNECTED) {
         const wifi_event_sta_disconnected_t *ev = data;
         bool was_connected = s_connected;
         s_connected = false;
         bridge_set_wifi_link(false);
-        if (was_connected || s_reconnects % 20 == 0) {
-            ESP_LOGW(TAG, "disconnected (reason %u), retrying", ev->reason);
+        if (was_connected) {
+            record_drop(ev->reason);
+            ESP_LOGW(TAG, "link dropped (reason %u %s), retrying", ev->reason, wifi_link_reason_name(ev->reason));
+        } else if (s_reconnects % 20 == 0) {
+            ESP_LOGW(TAG, "still not connected (reason %u %s), retrying", ev->reason, wifi_link_reason_name(ev->reason));
         }
         if (s_configured && !s_scanning) {
             s_reconnects++;
@@ -186,6 +229,12 @@ void wifi_link_get_status(wifi_link_status_t *out)
     out->configured = s_configured;
     out->connected = s_connected;
     out->reconnects = s_reconnects;
+    out->drops = s_drops;
+    out->connected_s = s_connected ? (uint32_t)((esp_timer_get_time() - s_connected_since_us) / 1000000) : 0;
+    out->history_len = s_history_len;
+    for (uint8_t i = 0; i < s_history_len; i++) {
+        out->history[i] = s_history[(s_history_next + WIFI_LINK_HISTORY - 1 - i) % WIFI_LINK_HISTORY];
+    }
     strlcpy(out->ssid, (const char *)s_config.sta.ssid, sizeof(out->ssid));
     wifi_ap_record_t ap;
     if (s_connected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {

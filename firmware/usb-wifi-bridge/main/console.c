@@ -249,9 +249,14 @@ static void cmd_status(void)
     bridge_stats_t stats;
     wifi_link_get_status(&link);
     bridge_get_stats(&stats);
-    con_printf("wifi: %s ssid='%s' rssi=%d ch=%u reconnects=%lu\n",
+    con_printf("wifi: %s ssid='%s' rssi=%d ch=%u up=%lus drops=%lu attempts=%lu\n",
                link.connected ? "connected" : (link.configured ? "connecting" : "unconfigured"),
-               link.ssid, link.rssi, link.channel, (unsigned long)link.reconnects);
+               link.ssid, link.rssi, link.channel, (unsigned long)link.connected_s,
+               (unsigned long)link.drops, (unsigned long)link.reconnects);
+    for (uint8_t i = 0; i < link.history_len; i++) {
+        con_printf("  drop at %lus: reason %u %s\n", (unsigned long)link.history[i].uptime_s,
+                   link.history[i].reason, wifi_link_reason_name(link.history[i].reason));
+    }
     con_printf("filter: %s\n", bridge_filter_enabled() ? "on" : "off");
     con_printf("to host: %lu frames %llu bytes, %lu dropped, %lu rewritten\n",
                (unsigned long)stats.to_host_frames, (unsigned long long)stats.to_host_bytes,

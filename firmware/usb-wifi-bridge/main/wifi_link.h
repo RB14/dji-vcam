@@ -10,14 +10,28 @@
 
 #include "esp_err.h"
 
+#define WIFI_LINK_HISTORY 8
+
+typedef struct {
+    uint16_t reason;       /* wifi_err_reason_t */
+    uint32_t uptime_s;     /* when the established link dropped */
+} wifi_link_drop_t;
+
 typedef struct {
     bool configured;
     bool connected;
     char ssid[33];
     int8_t rssi;
     uint8_t channel;
-    uint32_t reconnects;
+    uint32_t reconnects;       /* connection attempts after a failure or drop */
+    uint32_t drops;            /* established links that went down */
+    uint32_t connected_s;      /* how long the current link has been up */
+    uint8_t history_len;       /* most recent drops first */
+    wifi_link_drop_t history[WIFI_LINK_HISTORY];
 } wifi_link_status_t;
+
+/* Short name for a Wi-Fi disconnect reason code. */
+const char *wifi_link_reason_name(uint16_t reason);
 
 /* Starts Wi-Fi and connects if credentials are stored. */
 esp_err_t wifi_link_start(void);
