@@ -105,32 +105,46 @@ struct H264Decoder::Impl {
         return packet && frame && downloaded;
     }
 
-    // Packs the picture into an Nv12Frame: a plain copy for GPU surfaces (already NV12), an
-    // unscaled repack (no color conversion) for the software decoder's planar YUV.
-    Nv12Frame to_nv12(const AVFrame& picture) {
+    // Packs `picture` into an Nv12Frame: a plain copy for GPU surfaces (already NV12), an unscaled
+    // repack (no color or range conversion) for the software decoder's planar YUV. The color
+    // description comes from `described`, the decoder's own frame (a GPU download lacks it).
+    // NV12 needs even sizes: an odd last row or column is dropped. Empty on failure.
+    std::optional<Nv12Frame> to_nv12(const AVFrame& picture, const AVFrame& described) {
+        const int width = picture.width & ~1;
+        const int height = picture.height & ~1;
+        if (width < 2 || height < 2) {
+            return std::nullopt;
+        }
         Nv12Frame out;
-        out.width = picture.width;
-        out.height = picture.height;
-        out.bt709 = picture.colorspace == AVCOL_SPC_BT709 ||
-                    (picture.colorspace == AVCOL_SPC_UNSPECIFIED && picture.height >= 720);  // HD default
-        out.full_range = picture.color_range == AVCOL_RANGE_JPEG || picture.format == AV_PIX_FMT_YUVJ420P;
-        const std::size_t width = static_cast<std::size_t>(picture.width);
-        const std::size_t luma = width * static_cast<std::size_t>(picture.height);
+        out.width = width;
+        out.height = height;
+        out.bt709 = described.colorspace == AVCOL_SPC_BT709 ||
+                    (described.colorspace == AVCOL_SPC_UNSPECIFIED && height >= 720);  // HD default
+        out.full_range = described.color_range == AVCOL_RANGE_JPEG || picture.format == AV_PIX_FMT_YUVJ420P;
+        const std::size_t row = static_cast<std::size_t>(width);
+        const std::size_t luma = row * static_cast<std::size_t>(height);
         out.data.resize(luma + luma / 2);
         std::uint8_t* planes[4] = {out.data.data(), out.data.data() + luma, nullptr, nullptr};
         if (picture.format == AV_PIX_FMT_NV12) {
-            for (int row = 0; row < picture.height; ++row) {
-                std::memcpy(planes[0] + width * row, picture.data[0] + static_cast<std::ptrdiff_t>(picture.linesize[0]) * row, width);
+            for (int y = 0; y < height; ++y) {
+                std::memcpy(planes[0] + row * y, picture.data[0] + static_cast<std::ptrdiff_t>(picture.linesize[0]) * y, row);
             }
-            for (int row = 0; row < picture.height / 2; ++row) {
-                std::memcpy(planes[1] + width * row, picture.data[1] + static_cast<std::ptrdiff_t>(picture.linesize[1]) * row, width);
+            for (int y = 0; y < height / 2; ++y) {
+                std::memcpy(planes[1] + row * y, picture.data[1] + static_cast<std::ptrdiff_t>(picture.linesize[1]) * y, row);
             }
             return out;
         }
-        scaler = sws_getCachedContext(scaler, picture.width, picture.height, static_cast<AVPixelFormat>(picture.format),
-                                      picture.width, picture.height, AV_PIX_FMT_NV12, SWS_POINT, nullptr, nullptr, nullptr);
-        const int strides[4] = {picture.width, picture.width, 0, 0};
-        sws_scale(scaler, picture.data, picture.linesize, 0, picture.height, planes, strides);
+        scaler = sws_getCachedContext(scaler, width, height, static_cast<AVPixelFormat>(picture.format), width, height,
+                                      AV_PIX_FMT_NV12, SWS_POINT, nullptr, nullptr, nullptr);
+        if (!scaler) {
+            return std::nullopt;
+        }
+        // Keep the source's range: full-range (JPEG) YUV stays full range, flagged in full_range.
+        const int* coefficients = sws_getCoefficients(out.bt709 ? SWS_CS_ITU709 : SWS_CS_DEFAULT);
+        const int range = out.full_range ? 1 : 0;
+        sws_setColorspaceDetails(scaler, coefficients, range, coefficients, range, 0, 1 << 16, 1 << 16);
+        const int strides[4] = {width, width, 0, 0};
+        sws_scale(scaler, picture.data, picture.linesize, 0, height, planes, strides);
         return out;
     }
 };
@@ -183,7 +197,9 @@ std::optional<Nv12Frame> H264Decoder::decode(std::span<const std::uint8_t> acces
             }
             picture = d.downloaded;
         }
-        latest = d.to_nv12(*picture);
+        if (auto converted = d.to_nv12(*picture, *d.frame)) {
+            latest = std::move(converted);
+        }
         av_frame_unref(d.downloaded);
         av_frame_unref(d.frame);
     }
@@ -229,6 +245,9 @@ const std::uint8_t* Nv12Canvas::draw(const Nv12Frame& frame) {
     const double scale = fits ? 1.0 : std::min(static_cast<double>(d.width) / frame.width, static_cast<double>(d.height) / frame.height);
     const int fitted_width = std::min(d.width, static_cast<int>(frame.width * scale) & ~1);
     const int fitted_height = std::min(d.height, static_cast<int>(frame.height * scale) & ~1);
+    if (fitted_width < 2 || fitted_height < 2) {
+        return d.canvas.data();  // degenerate frame (e.g. 4096x2): nothing sensible to show
+    }
     const int left = ((d.width - fitted_width) / 2) & ~1;
     const int top = ((d.height - fitted_height) / 2) & ~1;
     if (frame.width != d.source_width || frame.height != d.source_height) {
@@ -252,6 +271,9 @@ const std::uint8_t* Nv12Canvas::draw(const Nv12Frame& frame) {
     }
     d.scaler = sws_getCachedContext(d.scaler, frame.width, frame.height, AV_PIX_FMT_NV12, fitted_width, fitted_height,
                                     AV_PIX_FMT_NV12, SWS_BILINEAR, nullptr, nullptr, nullptr);
+    if (!d.scaler) {
+        return d.canvas.data();
+    }
     const std::uint8_t* source[4] = {source_luma, source_chroma, nullptr, nullptr};
     const int source_strides[4] = {frame.width, frame.width, 0, 0};
     std::uint8_t* planes[4] = {luma, chroma, nullptr, nullptr};

@@ -143,7 +143,7 @@ int run_decode_bench(const std::string& path, djivcam::media::DecoderPreference 
     std::vector<djivcam::h264::AccessUnit> units;
     djivcam::h264::AccessUnitAssembler assembler([&](djivcam::h264::AccessUnit&& unit) { units.push_back(std::move(unit)); });
     assembler.push(stream);
-    assembler.flush();
+    assembler.finish();
 
     djivcam::media::H264Decoder decoder(preference);
     say("decoder: " + decoder.backend() + ", " + std::to_string(units.size()) + " access units");

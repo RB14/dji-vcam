@@ -35,6 +35,9 @@ public:
     // TODO: drive this from the video sub-header's end-of-frame marker once confirmed, which
     // would save up to one frame of latency compared to waiting for the next AUD.
     void flush();
+    // End of the stream (e.g. a recording): emits the last NAL unit, which no start code follows,
+    // and the last access unit.
+    void finish();
     // Drops all buffered data (e.g. after a stream restart).
     void reset();
 

@@ -71,7 +71,7 @@ void Pipeline::startReplay(const QString& path, djivcam::media::DecoderPreferenc
     auto units = std::make_shared<std::vector<djivcam::h264::AccessUnit>>();
     djivcam::h264::AccessUnitAssembler splitter([&units](djivcam::h264::AccessUnit&& unit) { units->push_back(std::move(unit)); });
     splitter.push({reinterpret_cast<const std::uint8_t*>(stream.constData()), static_cast<std::size_t>(stream.size())});
-    splitter.flush();
+    splitter.finish();
     if (units->empty()) {
         emit errorOccurred(tr("No H.264 video in %1").arg(path));
         return;
@@ -112,9 +112,13 @@ void Pipeline::stop() {
         wake_.notify_all();
         decoder_.join();
     }
-    std::lock_guard lock(mutex_);
-    queue_.clear();
-    assembler_.reset();
+    {
+        std::lock_guard lock(mutex_);
+        queue_.clear();
+        assembler_.reset();
+    }
+    std::lock_guard lock(frame_mutex_);
+    latest_frame_.reset();  // a frame decoded while stopping must not reappear after "No video"
 }
 
 void Pipeline::enqueue(djivcam::h264::AccessUnit&& unit) {

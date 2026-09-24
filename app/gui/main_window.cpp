@@ -140,8 +140,9 @@ MainWindow::MainWindow(QWidget* parent)
     statusBar()->addPermanentWidget(decoder_label_);
 
     connect(connect_action_, &QAction::toggled, this, &MainWindow::toggleConnection);
+    // Signals from the decode thread can arrive after Disconnect: ignore them then.
     connect(pipeline_, &Pipeline::frameAvailable, this, [this] {
-        if (auto frame = pipeline_->takeLatestFrame()) {
+        if (auto frame = pipeline_->takeLatestFrame(); frame && pipeline_->running()) {
             preview_->showFrame(std::move(frame));
         }
     });
@@ -154,7 +155,9 @@ MainWindow::MainWindow(QWidget* parent)
     connect(pipeline_, &Pipeline::statsUpdated, this, &MainWindow::onStats);
     connect(pipeline_, &Pipeline::decoderChanged, this, &MainWindow::onDecoder);
     connect(pipeline_, &Pipeline::formatChanged, this, [this](int width, int height) {
-        format_label_->setText(tr("%1×%2").arg(width).arg(height));
+        if (pipeline_->running()) {
+            format_label_->setText(tr("%1×%2").arg(width).arg(height));
+        }
     });
     connect(pipeline_, &Pipeline::errorOccurred, this, [this](const QString& message) {
         QMessageBox::warning(this, tr("Decoder error"), message);

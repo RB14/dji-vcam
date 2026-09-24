@@ -5,15 +5,16 @@
 namespace djivcam {
 
 void RequestTracker::add(const duml::Frame& request, ReplyCallback on_reply, Clock::time_point deadline) {
-    pending_.push_back({request.seq, request.cmd_set, request.cmd_id, std::move(on_reply), deadline});
+    pending_.push_back({request.seq, request.receiver, request.cmd_set, request.cmd_id, std::move(on_reply), deadline});
 }
 
 bool RequestTracker::resolve(const duml::Frame& frame) {
-    if (frame.is_request() || frame.payload.empty()) {
+    if ((frame.flags & 0x80) == 0 || frame.payload.empty()) {  // not a response (0x80 / 0xC0)
         return false;
     }
     for (auto it = pending_.begin(); it != pending_.end(); ++it) {
-        if (it->seq == frame.seq && it->cmd_set == frame.cmd_set && it->cmd_id == frame.cmd_id) {
+        if (it->seq == frame.seq && it->receiver == frame.sender && it->cmd_set == frame.cmd_set &&
+            it->cmd_id == frame.cmd_id) {
             ReplyCallback on_reply = std::move(it->on_reply);
             pending_.erase(it);  // before the callback, which may add requests
             if (on_reply) {

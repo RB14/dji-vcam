@@ -39,6 +39,11 @@ TEST_F(RequestTrackerTest, IgnoresOtherTrafficRequestsAndEmptyReplies) {
     EXPECT_FALSE(tracker.resolve(request(0x100, 0x02, 0x8F).reply({0x00})));  // other command
     EXPECT_FALSE(tracker.resolve(request(0x100, 0x02, 0x8E)));               // a request, not a reply
     EXPECT_FALSE(tracker.resolve(request(0x100, 0x02, 0x8E).reply({})));      // transport ACK
+    duml::Frame push{duml::kAddrCamera, duml::kAddrApp, 0x100, duml::kFlagPush, 0x02, 0x8E, {0x00}};
+    EXPECT_FALSE(tracker.resolve(push));  // a push that happens to share the sequence number
+    duml::Frame stranger = request(0x100, 0x02, 0x8E).reply({0x00});
+    stranger.sender = 0x28;
+    EXPECT_FALSE(tracker.resolve(stranger));  // answered by another endpoint
     EXPECT_TRUE(results.empty());
     EXPECT_EQ(tracker.pending(), 1u);
 }

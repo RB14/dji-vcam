@@ -40,7 +40,7 @@ private:
 
     Frame frame_;
     bool uploaded_ = false;  // frame_ is in the textures
-    QOpenGLShaderProgram program_;
+    std::unique_ptr<QOpenGLShaderProgram> program_;  // per GL context: recreated with it
     QOpenGLBuffer quad_{QOpenGLBuffer::VertexBuffer};
     GLuint textures_[2] = {0, 0};  // luma (width x height), chroma (width/2 x height/2, 2 channels)
     int texture_width_ = 0;

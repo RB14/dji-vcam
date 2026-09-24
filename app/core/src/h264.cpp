@@ -65,6 +65,16 @@ void AccessUnitAssembler::flush() {
     current_ = AccessUnit{};
 }
 
+void AccessUnitAssembler::finish() {
+    const std::span<const std::uint8_t> buffer(pending_);
+    const std::size_t start = find_start_code(buffer, 0);
+    if (start + kStartCode.size() < buffer.size()) {
+        on_nal(buffer.subspan(start + kStartCode.size()));
+    }
+    pending_.clear();
+    flush();
+}
+
 void AccessUnitAssembler::reset() {
     pending_.clear();
     current_ = AccessUnit{};

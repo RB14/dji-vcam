@@ -74,12 +74,13 @@ void PreviewWidget::initializeGL() {
     luminance_textures_ = context()->format().majorVersion() < 3;
     connect(context(), &QOpenGLContext::aboutToBeDestroyed, this, &PreviewWidget::release_gl, Qt::UniqueConnection);
 
-    program_.addShaderFromSourceCode(QOpenGLShader::Vertex, kVertexShader);
-    program_.addShaderFromSourceCode(QOpenGLShader::Fragment,
-                                     QString::fromLatin1(kFragmentShader).arg(luminance_textures_ ? "ra" : "rg"));
-    program_.bindAttributeLocation("position", 0);
-    if (!program_.link()) {
-        qWarning("preview shader: %s", qPrintable(program_.log()));
+    program_ = std::make_unique<QOpenGLShaderProgram>();
+    program_->addShaderFromSourceCode(QOpenGLShader::Vertex, kVertexShader);
+    program_->addShaderFromSourceCode(QOpenGLShader::Fragment,
+                                      QString::fromLatin1(kFragmentShader).arg(luminance_textures_ ? "ra" : "rg"));
+    program_->bindAttributeLocation("position", 0);
+    if (!program_->link()) {
+        qWarning("preview shader: %s", qPrintable(program_->log()));
     }
 
     const GLfloat corners[] = {-1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f};  // triangle strip
@@ -108,7 +109,7 @@ void PreviewWidget::release_gl() {
     glDeleteTextures(2, textures_);
     textures_[0] = textures_[1] = 0;
     quad_.destroy();
-    program_.removeAllShaders();
+    program_.reset();
     doneCurrent();
 }
 
@@ -158,7 +159,7 @@ void PreviewWidget::paintGL() {
 }
 
 QImage PreviewWidget::snapshot() {
-    if (!frame_ || !textures_[0]) {
+    if (!frame_ || !textures_[0] || !program_) {
         return {};
     }
     makeCurrent();
@@ -176,20 +177,20 @@ QImage PreviewWidget::snapshot() {
 }
 
 void PreviewWidget::draw_frame() {
-    program_.bind();
-    program_.setUniformValue("luma", 0);
-    program_.setUniformValue("chroma", 1);
-    program_.setUniformValue("yuv_to_rgb", conversion_matrix(*frame_));
-    program_.setUniformValue("yuv_offset", conversion_offset(*frame_));
+    program_->bind();
+    program_->setUniformValue("luma", 0);
+    program_->setUniformValue("chroma", 1);
+    program_->setUniformValue("yuv_to_rgb", conversion_matrix(*frame_));
+    program_->setUniformValue("yuv_offset", conversion_offset(*frame_));
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, textures_[1]);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textures_[0]);
     quad_.bind();
-    program_.enableAttributeArray(0);
-    program_.setAttributeBuffer(0, GL_FLOAT, 0, 2);
+    program_->enableAttributeArray(0);
+    program_->setAttributeBuffer(0, GL_FLOAT, 0, 2);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    program_.disableAttributeArray(0);
+    program_->disableAttributeArray(0);
     quad_.release();
-    program_.release();
+    program_->release();
 }

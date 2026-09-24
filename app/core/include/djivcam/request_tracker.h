@@ -1,7 +1,8 @@
 // Matches the camera's DUML replies to the requests the app sent, and gives up on unanswered ones.
 //
-// A reply carries the request's sequence number and command, with the addresses swapped. Replies
-// with an empty payload are not answers (real ones start with a result code) and are ignored.
+// A reply carries the request's sequence number and command, the response flag, and comes from the
+// endpoint the request went to. Replies with an empty payload are not answers (real ones start
+// with a result code) and are ignored, as are pushes that happen to share a sequence number.
 #pragma once
 
 #include <chrono>
@@ -32,6 +33,7 @@ public:
 private:
     struct Pending {
         std::uint16_t seq;
+        std::uint8_t receiver;
         std::uint8_t cmd_set;
         std::uint8_t cmd_id;
         ReplyCallback on_reply;

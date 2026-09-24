@@ -104,14 +104,18 @@ void LiveViewSession::stop() {
 
 void LiveViewSession::request(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id, duml::Bytes payload,
                               ReplyCallback on_reply, std::chrono::milliseconds timeout, std::uint8_t flags) {
-    if (state_ != SessionState::Streaming) {
-        if (on_reply) {
-            on_reply(std::nullopt);
+    {
+        // Checked under the lock: the session leaves Streaming before it fails the queue (also under
+        // this lock), so a request is either failed with the queue or refused here, never stranded.
+        std::lock_guard lock(outgoing_mutex_);
+        if (state_ == SessionState::Streaming) {
+            outgoing_.push_back({receiver, cmd_set, cmd_id, std::move(payload), flags, std::move(on_reply), timeout});
+            return;
         }
-        return;
     }
-    std::lock_guard lock(outgoing_mutex_);
-    outgoing_.push_back({receiver, cmd_set, cmd_id, std::move(payload), flags, std::move(on_reply), timeout});
+    if (on_reply) {
+        on_reply(std::nullopt);
+    }
 }
 
 void LiveViewSession::fail_outgoing() {

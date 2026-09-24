@@ -43,5 +43,17 @@ TEST(AccessUnitAssembler, SplitsAtAudDropsDjiUnitsAndFlagsKeyframes) {
     EXPECT_FALSE(units[1].keyframe);
 }
 
+TEST(AccessUnitAssembler, FinishEmitsTheLastUnitOfARecording) {
+    const Bytes aud = nal({0x09, 0x10});
+    const Bytes slice = nal({0x41, 0xF2, 0x22});
+    std::vector<AccessUnit> units;
+    AccessUnitAssembler assembler([&](AccessUnit&& unit) { units.push_back(std::move(unit)); });
+    assembler.push(concat({aud, slice, aud, slice}));  // the last slice has no start code after it
+    ASSERT_EQ(units.size(), 1U);
+    assembler.finish();
+    ASSERT_EQ(units.size(), 2U);
+    EXPECT_EQ(units[1].data, concat({aud, slice}));
+}
+
 }  // namespace
 }  // namespace djivcam::h264
