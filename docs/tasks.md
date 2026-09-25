@@ -9,8 +9,8 @@ Milestones refer to [app-architecture.md](app-architecture.md).
        (MSBuild ignores header changes under AppData) crashed it first: the work folder moved to
        `%USERPROFILE%\.dji-vcam`.
 2. [x] Installer: install, upgrade over a running app (3 times), uninstall; the webcam is now
-       registered for all users for good by the installer. Still to check: the uninstaller removes
-       the permanently registered webcam (`--vcam-unregister`)
+       registered for all users for good by the installer, and the uninstaller removes it (the
+       webcam, COM registration, firewall rule and files are gone)
 3. [x] Live view on main: webcam carries the live camera; loss and noise investigated (camera never
        re-sends, no keyframe request, bridge firmware 0.4.0 cut the loss); freeze-after-loss option
 4. [x] Camera controls: status topics decode correctly on the camera, the EV byte matches the camera
@@ -38,13 +38,14 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       - [ ] Audio: mic channel (parameter 0x0020, set unconfirmed); wind noise is not exposed by Mimo
       - [ ] Timelapse / hyperlapse parameters, photo size/format/burst, custom modes, loop recording
       - [ ] Slow-motion speed (format with speed ratio), AE lock, spot metering, HDR video
-- [~] **Virtual webcam, Windows** (milestone 3): Media Foundation virtual camera ("DJI VCam") fed by
+- [x] **Virtual webcam, Windows** (milestone 3): Media Foundation virtual camera ("DJI VCam") fed by
       the app through shared memory; visible in OBS, Zoom, Teams, browsers, Windows Camera.
       - [x] Media source COM DLL (IMFMediaSource/IMFMediaStream, NV12 frames)
       - [x] Shared-memory frame transport app -> Frame Server
-      - [x] Registration (admin, once) and MFCreateVirtualCamera lifetime handling in the app
+      - [x] Registration for all users and for good by the installer (MF system lifetime); the app
+            only publishes frames
       - [x] "Virtual camera" toggle and status in the app; verified with a DirectShow client
-      - [ ] Check in OBS, a browser and the Windows Camera app
+      - [x] Checked in OBS, Chrome and the Windows Camera app; paced to the camera's 30 fps
 
 ## Next
 
@@ -54,12 +55,10 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 - [x] **Webcam pacing**: the media source handed out a sample whenever asked (Chrome measured
       52 fps on a 30 fps camera, repeated frames); it now waits for the app's next frame: Chrome
       measures ~30 fps (2026-09-25)
-- [ ] Multi-app webcam: check that Windows' "Allow multiple apps" works for DJI VCam and stays on
-
-- [~] **Windows installer**: Inno Setup script (installs the app, registers the virtual camera,
+- [x] **Windows installer**: Inno Setup script (installs the app, registers the virtual camera,
       Start-menu entry, uninstaller); output `binaries/dji-vcam-setup-<version>.exe` (git-ignored)
       - [x] Installer script, packaging, app-local Visual C++ runtime
-      - [ ] Test install, upgrade and uninstall (needs an administrator prompt)
+      - [x] Tested install, upgrade and uninstall (2026-09-25)
       - [x] App icon (exe, windows, installer) and version info
 - [~] **Replace SimpleBLE** (BUSL-1.1) with our own Bluetooth code: C++/WinRT on Windows, BlueZ
       over D-Bus on Linux, so the project stays freely licensable
@@ -78,6 +77,9 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       live-view experiments 4 and 8 of camera-controls.md (09/A8 enable, stream-quality parameter)
 - [ ] Latency: hand GPU frames to preview / virtual camera without CPU copies
 - [ ] Optional OBS "direct mode" plugin reusing the core
+- [ ] Multi-app webcam: check that Windows 11's "Allow multiple apps" (Settings → Cameras → DJI VCam
+      → Advanced) works for DJI VCam and stays on (deferred 2026-09-25; it cannot be enabled by the
+      installer: its storage is undocumented)
 
 ## Done
 
