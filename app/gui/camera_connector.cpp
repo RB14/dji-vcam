@@ -61,7 +61,7 @@ void CameraConnector::run(std::stop_token stop, QString identifier, QString toke
         if (!found) {
             return;
         }
-        emit cameraFound(QString::fromStdString(found->name), QString::fromStdString(found->address));
+        emit cameraFound(QString::fromStdString(found->name), QString::fromStdString(found->address), found->model);
 
         emit stageChanged(Stage::Pairing, tr("Connecting to %1").arg(QString::fromStdString(found->name)));
         if (!camera.connect(*found)) {

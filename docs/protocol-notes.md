@@ -64,6 +64,11 @@ Key files:
 
 Recommendation: match on the company ID plus the model byte, and fall back to the name. Do not require `0xFA`.
 
+Model bytes (Moblin `DjiDeviceModel.swift`, eerimoq/moblin `1bb4902`; `0x15` also seen on our
+camera): `0x10` Osmo Action 2, `0x12` Action 3, `0x14` Action 4, `0x15` Action 5 Pro, `0x17` Osmo
+360, `0x18` Action 6, `0x20` Pocket 3, `0x21` Pocket 4. The app names the model from this table
+(`core/camera_model`) and warns for anything but the tested `0x15`.
+
 ### a.2 GATT
 
 | item | value | source |

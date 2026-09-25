@@ -6,6 +6,7 @@ add_library(djivcam_core STATIC
     src/reassembler.cpp
     src/request_tracker.cpp
     src/camera_controller.cpp
+    src/camera_model.cpp
     src/camera_protocol.cpp
     src/session.cpp
     src/wifi_channel.cpp

@@ -13,6 +13,7 @@ add_executable(djivcam_tests
     reassembler_test.cpp
     request_tracker_test.cpp
     camera_controller_test.cpp
+    camera_model_test.cpp
     camera_protocol_test.cpp
     wifi_channel_test.cpp
 )

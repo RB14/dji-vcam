@@ -40,7 +40,8 @@ signals:
     void stageChanged(CameraConnector::Stage stage, const QString& detail);
     // The camera accepted a move of its access point to `channel`.
     void wifiChannelChanged(int channel);
-    void cameraFound(const QString& name, const QString& address);
+    // `model`: the model byte of its advertisement (djivcam/camera_model.h).
+    void cameraFound(const QString& name, const QString& address, int model);
     // The camera's access point is up; credentials to give the network link (e.g. the ESP32 bridge).
     void wifiReady(const QString& ssid, const QString& password);
 

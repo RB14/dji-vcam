@@ -35,6 +35,7 @@
 #include "bridge_link.h"
 #include "camera_panel.h"
 #include "djivcam/camera_ble.h"
+#include "djivcam/camera_model.h"
 #include "djivcam/wifi_channel.h"
 #include "pipeline.h"
 #include "preview_widget.h"
@@ -218,8 +219,18 @@ MainWindow::MainWindow(QWidget* parent)
         setKnownWifiChannel(channel);
         statusBar()->showMessage(tr("The camera's Wi-Fi moved to channel %1").arg(channel), 8000);
     });
-    connect(connector_, &CameraConnector::cameraFound, this, [this](const QString& name, const QString& address) {
-        camera_label_->setText(tr("Camera: %1").arg(name));
+    connect(connector_, &CameraConnector::cameraFound, this, [this](const QString& name, const QString& address, int model) {
+        const auto id = static_cast<std::uint8_t>(model);
+        const QString model_name = QString::fromStdString(djivcam::camera::model_name(id));
+        camera_label_->setText(model_name.isEmpty() ? tr("Camera: %1").arg(name) : tr("Camera: %1 (%2)").arg(model_name, name));
+        camera_label_->setToolTip(tr("Bluetooth name %1, DJI model byte 0x%2").arg(name).arg(model, 2, 16, QLatin1Char('0')));
+        qInfo("bluetooth: found %s, model 0x%02x (%s)", qPrintable(name), model,
+              model_name.isEmpty() ? "unknown" : qPrintable(model_name));
+        if (!djivcam::camera::model_tested(id)) {
+            statusBar()->showMessage(tr("%1 has not been tested with DJI VCam yet (only the Osmo Action 5 Pro has): it may not work")
+                                         .arg(model_name.isEmpty() ? tr("This DJI camera") : model_name),
+                                     20000);
+        }
         settings_->setValue(kAddressKey, address);
     });
 

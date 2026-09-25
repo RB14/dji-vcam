@@ -50,6 +50,7 @@
 #include <vector>
 
 #include "djivcam/camera_controller.h"
+#include "djivcam/camera_model.h"
 #include "djivcam/session.h"
 
 #ifdef DJIVCAM_HAVE_BLE
@@ -472,9 +473,10 @@ int main(int argc, char* argv[]) {
         say("scanning for Bluetooth LE devices for " + std::to_string(ble_scan_seconds) + " s");
         const auto devices = djivcam::ble::scan_nearby(std::chrono::seconds(ble_scan_seconds));
         for (const auto& device : devices) {
-            char dji[32] = "";
+            char dji[64] = "";
             if (device.dji_model) {
-                std::snprintf(dji, sizeof(dji), "  DJI, model 0x%02x", *device.dji_model);
+                std::snprintf(dji, sizeof(dji), "  DJI, model 0x%02x %s", *device.dji_model,
+                              djivcam::camera::model_name(*device.dji_model).c_str());
             }
             char line[160];
             std::snprintf(line, sizeof(line), "%s  %4d dBm  %-24s%s", device.address.c_str(), device.rssi,
@@ -526,8 +528,10 @@ int main(int argc, char* argv[]) {
             say("no DJI camera found");
             return 1;
         }
+        const std::string model = djivcam::camera::model_name(found->model);
         say("found '" + found->name + "' " + found->address + " rssi " + std::to_string(found->rssi) + " model " +
-            std::to_string(found->model));
+            std::to_string(found->model) + " (" + (model.empty() ? "unknown" : model) + ")" +
+            (djivcam::camera::model_tested(found->model) ? "" : ": not tested with DJI VCam"));
         if (!camera->connect(*found)) {
             return 1;
         }

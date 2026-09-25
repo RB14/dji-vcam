@@ -18,7 +18,6 @@
 namespace djivcam::ble {
 
 inline constexpr std::uint16_t kDjiCompanyId = 0x08AA;
-inline constexpr std::uint8_t kModelAction5Pro = 0x15;
 
 struct Camera {
     std::string name;
