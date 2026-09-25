@@ -5,8 +5,9 @@
 ;
 ; Installs the app into Program Files, registers the virtual camera's media source from there (the
 ; Windows camera services can read Program Files, so the app never has to ask for administrator
-; rights itself), lets the camera's video in through Windows Firewall, and removes all of it on
-; uninstall.
+; rights itself), registers the "DJI VCam" webcam for all users for good (listed even while the app
+; is closed, and it keeps its Windows settings), lets the camera's video in through Windows
+; Firewall, and removes all of it on uninstall.
 
 #ifndef AppVersion
   #error Define AppVersion, e.g. /DAppVersion=0.1.0
@@ -68,9 +69,13 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 ; duplicate rules.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""{#AppName}"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""{#AppName}"" dir=in action=allow program=""{app}\{#AppExe}"" enable=yes profile=any"; Flags: runhidden; StatusMsg: "Allowing the camera's video through Windows Firewall..."
+; The webcam, for all users and for good (the same registration again on an upgrade is harmless).
+Filename: "{app}\dji-vcam-cli.exe"; Parameters: "--vcam-register"; Flags: runhidden; StatusMsg: "Registering the DJI VCam webcam..."
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
+; Before the files go: the webcam (all users, and a portable copy's for this user), then the rule.
+Filename: "{app}\dji-vcam-cli.exe"; Parameters: "--vcam-unregister"; Flags: runhidden; RunOnceId: "RemoveWebcam"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""{#AppName}"""; Flags: runhidden; RunOnceId: "RemoveFirewallRule"
 
 [UninstallDelete]

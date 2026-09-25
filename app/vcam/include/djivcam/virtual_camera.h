@@ -1,13 +1,17 @@
 // The "DJI VCam" virtual webcam, seen by OBS, Zoom, Teams, browsers and the Windows Camera app.
 //
-// Windows 11: registers a Media Foundation virtual camera (MFCreateVirtualCamera) for the lifetime
-// of this process and publishes NV12 frames to its media source through shared memory
-// (vcam_protocol.h). The media source DLL must be registered once (administrator).
+// Windows 11: a Media Foundation virtual camera (MFCreateVirtualCamera) registered once, for good
+// (system lifetime): the installer registers it for all users, a portable copy of the app for the
+// current user. It stays listed while the app is closed (its media source then shows a gray "no
+// signal" picture) and keeps its Windows settings, e.g. "Allow multiple apps". The app publishes
+// NV12 frames to the media source through shared memory (vcam_protocol.h). The media source DLL
+// must be registered once (administrator).
 #pragma once
 
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace djivcam::vcam {
 
@@ -24,8 +28,17 @@ public:
     // %ProgramData%\DJI VCam, where the camera services can read it, and registers it there.
     static bool install_source(const std::wstring& source_dll, std::string* error);
 
-    // Makes "DJI VCam" appear as a camera. Returns false with a reason if it cannot.
-    bool start(std::string* error);
+    // The cameras apps can see (Media Foundation video capture devices), by friendly name.
+    static std::vector<std::wstring> list_cameras();
+    // True if a camera named "DJI VCam" is listed (registered by the installer or by the app).
+    static bool camera_registered();
+    // Registers "DJI VCam" for good: for all users (administrator) or the current user.
+    static bool register_camera(bool all_users, std::string* error);
+    // Removes the "DJI VCam" registered with the same scope.
+    static bool unregister_camera(bool all_users, std::string* error);
+
+    // Starts / stops sending frames to the webcam (it shows "no signal" meanwhile).
+    void start();
     void stop();
     bool running() const;
 

@@ -239,13 +239,17 @@ void MainWindow::enableVirtualCamera(bool on) {
             return;
         }
     }
-    if (!virtual_camera_->start(&error)) {
+    // The installer registers the webcam for all users; a portable copy registers it once, for good,
+    // for this user (no administrator needed).
+    if (!VirtualCamera::camera_registered() && !VirtualCamera::register_camera(false, &error)) {
         QMessageBox::warning(this, tr("Virtual camera"), QString::fromStdString(error));
         QSignalBlocker block(vcam_action_);
         vcam_action_->setChecked(false);
-    } else {
-        settings_->setValue(kVirtualCameraKey, true);
+        updateVirtualCameraStatus();
+        return;
     }
+    virtual_camera_->start();
+    settings_->setValue(kVirtualCameraKey, true);
     updateVirtualCameraStatus();
 #else
     (void)on;

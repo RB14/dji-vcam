@@ -36,4 +36,4 @@ target_link_libraries(djivcam-source PRIVATE WIL::WIL
 add_library(djivcam_vcam STATIC windows/virtual_camera.cpp)
 target_include_directories(djivcam_vcam PUBLIC include)
 target_compile_definitions(djivcam_vcam PUBLIC DJIVCAM_HAVE_VCAM PRIVATE UNICODE _UNICODE)
-target_link_libraries(djivcam_vcam PUBLIC mfplat mfsensorgroup ole32 shell32 advapi32)
+target_link_libraries(djivcam_vcam PUBLIC mf mfplat mfsensorgroup ole32 shell32 advapi32)

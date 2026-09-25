@@ -8,14 +8,16 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 1. [x] Media source update (lock fix, heartbeat, BT.709 type) installed. A stale Windows build
        (MSBuild ignores header changes under AppData) crashed it first: the work folder moved to
        `%USERPROFILE%\.dji-vcam`.
-2. [ ] Installer: install, start from the Start menu, uninstall (needs administrator prompts)
+2. [x] Installer: install, upgrade over a running app (3 times), uninstall; the webcam is now
+       registered for all users for good by the installer. Still to check: the uninstaller removes
+       the permanently registered webcam (`--vcam-unregister`)
 3. [x] Live view on main: webcam carries the live camera; loss and noise investigated (camera never
        re-sends, no keyframe request, bridge firmware 0.4.0 cut the loss); freeze-after-loss option
 4. [x] Camera controls: status topics decode correctly on the camera, the EV byte matches the camera
        screen, settings changed in the panel and on the camera follow each other (1 s refresh)
 5. [x] Native Bluetooth branch (`ble-native`): pairs, wakes and fetches the credentials on the
        camera; merged
-6. [ ] Webcam consumers: OBS (set "Use buffering" off), a browser, Windows Camera
+6. [x] Webcam consumers: OBS, Chrome (1280x720 @ 30 fps), Windows Camera
 7. [x] Camera power cycle while connected: the app finds, wakes and streams again by itself, ~15 s
        after the camera is on. It used to get no video after a short power-off until the camera had
        been off for a minute: the app kept its Bluetooth link open, DJI Mimo hangs up after the wake
@@ -45,6 +47,14 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       - [ ] Check in OBS, a browser and the Windows Camera app
 
 ## Next
+
+- [ ] **Camera Wi-Fi channel**: the camera's AP sat on a crowded channel (10) one evening and the
+      live view slowed to a few fps (the bridge could not get its acks out). The bridge's `scan`
+      sees the neighbours; move the camera to the quietest 2.4 GHz channel. `07/44` get_frequency
+      answers `00 00 01`, country code `07/19` "FI"; `07/2B` set_wifi_frequency is untested
+- [ ] **Webcam pacing**: the media source hands out a sample whenever asked (Chrome measured
+      52 fps on a 30 fps camera, repeated frames); pace it to 30 fps / new frames only
+- [ ] Multi-app webcam: check that Windows' "Allow multiple apps" works for DJI VCam and stays on
 
 - [~] **Windows installer**: Inno Setup script (installs the app, registers the virtual camera,
       Start-menu entry, uninstaller); output `binaries/dji-vcam-setup-<version>.exe` (git-ignored)

@@ -109,6 +109,9 @@ The version comes from `project(dji-vcam VERSION ...)` in `app/CMakeLists.txt`.
   the Bluetooth and bridge options too) or `dji-vcam-cli --camera-ip 127.0.0.1`.
 - `dji-vcam-cli --ble-scan 10` lists the Bluetooth LE devices advertising nearby and marks DJI
   cameras (with their model byte).
+- `dji-vcam-cli --list-cameras` lists the cameras apps can see (Media Foundation);
+  `--vcam-register` (administrator) registers the DJI VCam webcam for all users for good, and
+  `--vcam-unregister` removes it; the installer runs both. `--vcam-test 10` sends a test pattern.
 
 ### Experimenting with camera commands
 

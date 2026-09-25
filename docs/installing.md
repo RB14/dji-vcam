@@ -18,15 +18,15 @@ webcam.
 ## Install
 
 **Installer (recommended)**: run `dji-vcam-setup-<version>.exe` and approve the administrator
-prompt. It installs DJI VCam into `C:\Program Files\DJI VCam`, registers the **DJI VCam** webcam,
-lets the camera's video through Windows Firewall and adds a Start-menu entry. To uninstall, use
+prompt. It installs DJI VCam into `C:\Program Files\DJI VCam`, registers the **DJI VCam** webcam
+for all users, lets the camera's video through Windows Firewall and adds a Start-menu entry. To uninstall, use
 *Settings → Apps → Installed apps → DJI VCam*; that removes all of it again. Running a newer
 installer upgrades in place.
 
 **Portable ZIP**: extract `dji-vcam-<version>-win64.zip` anywhere and run `dji-vcam.exe`. If
 Windows Firewall asks, allow access: the video arrives as network traffic from the camera. The
 first time the virtual camera is turned on, the app installs the webcam component itself (one
-administrator prompt).
+administrator prompt) and registers the webcam for your user account.
 
 ## Prepare the camera
 
@@ -61,22 +61,26 @@ the app connect by itself when it starts.
 
 ## Using DJI VCam as a webcam (OBS, Zoom, Teams, browsers)
 
-The **Virtual camera** button in the toolbar (on by default) makes the live view available as a
-camera named **DJI VCam** while the app runs. Apps that list cameras through DirectShow (OBS, Zoom,
-ffmpeg) show it as **DJI VCam (Windows Virtual Camera)**.
+The **DJI VCam** webcam is always listed, like a physical camera, even while the app is closed
+(it then shows a dark gray picture). The **Virtual camera** button in the toolbar (on by default)
+sends the live view to it. Apps show it as **DJI VCam (Windows Virtual Camera)**: Windows adds the
+suffix to every virtual camera.
 
 - **Portable ZIP, first time only**: the app asks to install the camera component. Windows shows
   an administrator prompt; the component is copied to `C:\ProgramData\DJI VCam` and registered
   there, where the Windows camera service can load it. (The installer does this during setup.)
 - **OBS**: add a **Video Capture Device** source and pick *DJI VCam (Windows Virtual Camera)*.
+- **One app at a time** by default, as with any webcam ("device in use" in a second app). Recent
+  Windows 11 builds can share it: *Settings → Bluetooth & devices → Cameras → DJI VCam → Advanced
+  camera settings → Allow multiple apps to use camera at the same time*.
 - The webcam is always **1280x720 at 30 fps**. A 4:3 live view (960x720) gets black side bars.
-- Without video (not connected, camera asleep) the webcam shows a dark gray picture.
-- The status bar shows **Webcam: ready** (available, no app is using it), **Webcam: in use**,
-  **Webcam: off** or **Webcam: not installed**.
+- Without video (not connected, camera asleep, app closed) the webcam shows a dark gray picture.
+- The status bar shows **Webcam: ready** (the live view goes to the webcam, no app is using it),
+  **Webcam: in use**, **Webcam: off** or **Webcam: not installed**.
 
-To remove the component installed by the portable app, run in an administrator prompt:
-`regsvr32 /u "C:\ProgramData\DJI VCam\djivcam-source.dll"`, then delete that folder. (The
-installer's uninstaller does this by itself.)
+To remove what the portable app installed, run `dji-vcam-cli --vcam-unregister` from the app
+folder, then in an administrator prompt `regsvr32 /u "C:\ProgramData\DJI VCam\djivcam-source.dll"`
+and delete that folder. (The installer's uninstaller does all of it by itself.)
 
 ## Camera settings
 
@@ -135,5 +139,6 @@ as a PNG in `Pictures\DJI VCam`.
 | "The camera sent no video, connecting again" | Usually recovers by itself; the camera may be in a menu or playback screen |
 | Occasional noise | Wi-Fi interference on 2.4 GHz; keep the bridge and camera close and away from routers |
 | Seconds of lag, jerky video | If **delay** stays small, the lag builds up on the radio link or in the camera, usually with a high **loss**: move the bridge closer to the camera and away from routers, then Disconnect / Connect |
-| Webcam picture is dark gray | The app is not streaming: connect first. The webcam only exists while the app runs |
-| DJI VCam missing in an app | Check that the status bar says "Webcam: ready"; restart the other app so it lists cameras again |
+| Webcam picture is dark gray | The app is not streaming: start it and connect |
+| DJI VCam missing in an app | `dji-vcam-cli --list-cameras` lists what apps can see; restart the other app so it lists cameras again |
+| "Device in use" / "Timeout starting video source" | Another app has the webcam: close it (or allow multiple apps, see above) |

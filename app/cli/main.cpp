@@ -2,6 +2,10 @@
 //
 // Usage: dji-vcam-cli [--ble] [--seconds N] [--identifier-file PATH] [--dump PATH]
 //        dji-vcam-cli --vcam-test N    publish a test pattern to the DJI VCam webcam for N seconds
+//        dji-vcam-cli --list-cameras   list the cameras apps can see
+//        dji-vcam-cli --vcam-register  register the DJI VCam webcam for all users, for good
+//                                      (administrator; the installer runs it)
+//        dji-vcam-cli --vcam-unregister  remove it (all users, and this user's portable copy)
 //        dji-vcam-cli --ble-scan N     list the Bluetooth LE devices advertising nearby for N seconds
 //        dji-vcam-cli --decode-bench FILE [--decoder auto|gpu|cpu] [--frames-out FILE.nv12]
 //                                      time each per-frame step of the live view on a recorded stream
@@ -85,13 +89,14 @@ namespace {
 int run_vcam_test(int seconds) {
     namespace vc = djivcam::vcam;
     say(std::string("virtual camera component registered: ") + (vc::VirtualCamera::source_registered() ? "yes" : "no"));
-    vc::VirtualCamera camera;
     std::string error;
-    if (!camera.start(&error)) {
-        say("virtual camera start failed: " + error);
+    if (!vc::VirtualCamera::camera_registered() && !vc::VirtualCamera::register_camera(false, &error)) {
+        say("virtual camera registration failed: " + error);
         return 1;
     }
-    say("virtual camera started: open \"DJI VCam\" in an app (Windows Camera, OBS, browser)");
+    vc::VirtualCamera camera;
+    camera.start();
+    say("publishing a test pattern: open \"DJI VCam\" in an app (Windows Camera, OBS, browser)");
     std::vector<std::uint8_t> frame(vc::kFrameSize);
     const auto end = steady_clock::now() + std::chrono::seconds(seconds);
     for (int n = 0; steady_clock::now() < end; ++n) {
@@ -303,6 +308,9 @@ int main(int argc, char* argv[]) {
     int seconds = 20;
     bool use_ble = false;
     int vcam_test_seconds = 0;
+    bool vcam_register = false;
+    bool list_cameras = false;
+    bool vcam_unregister = false;
     int ble_scan_seconds = 0;
     std::string bench_file;
     std::string decoder_choice = "auto";
@@ -330,6 +338,12 @@ int main(int argc, char* argv[]) {
             use_ble = true;
         } else if (flag == "--ble-scan" && has_value) {
             ble_scan_seconds = std::stoi(argv[++i]);
+        } else if (flag == "--list-cameras") {
+            list_cameras = true;
+        } else if (flag == "--vcam-register") {
+            vcam_register = true;
+        } else if (flag == "--vcam-unregister") {
+            vcam_unregister = true;
         } else if (flag == "--vcam-test" && has_value) {
             vcam_test_seconds = std::stoi(argv[++i]);
         } else if (flag == "--decode-bench" && has_value) {
@@ -397,6 +411,46 @@ int main(int argc, char* argv[]) {
             std::fprintf(stderr, "unknown argument: %s\n", flag.c_str());
             return 2;
         }
+    }
+
+    if (list_cameras) {
+#ifdef DJIVCAM_HAVE_VCAM
+        for (const std::wstring& name : djivcam::vcam::VirtualCamera::list_cameras()) {
+            std::printf("%ls\n", name.c_str());
+        }
+        return 0;
+#else
+        std::fprintf(stderr, "built without the virtual camera\n");
+        return 2;
+#endif
+    }
+
+    if (vcam_register || vcam_unregister) {
+#ifdef DJIVCAM_HAVE_VCAM
+        // Run by the installer (elevated): the webcam for all users, for good; and its removal. The
+        // removal also takes a copy a portable run registered for this user.
+        namespace vc = djivcam::vcam;
+        std::string error;
+        if (vcam_register) {
+            std::string ignored;
+            vc::VirtualCamera::unregister_camera(false, &ignored);  // a portable copy's: no duplicate entry
+            if (!vc::VirtualCamera::register_camera(true, &error)) {
+                std::fprintf(stderr, "%s\n", error.c_str());
+                return 1;
+            }
+            say("DJI VCam webcam registered for all users");
+            return 0;
+        }
+        const bool all = vc::VirtualCamera::unregister_camera(true, &error);
+        std::string user_error;
+        const bool user = vc::VirtualCamera::unregister_camera(false, &user_error);
+        say(std::string("DJI VCam webcam removed: all users ") + (all ? "yes" : "no (" + error + ")") + ", this user " +
+            (user ? "yes" : "no (" + user_error + ")"));
+        return 0;
+#else
+        std::fprintf(stderr, "built without the virtual camera\n");
+        return 2;
+#endif
     }
 
     if (vcam_test_seconds > 0) {

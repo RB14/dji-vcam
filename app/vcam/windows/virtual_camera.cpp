@@ -2,12 +2,15 @@
 
 #include <windows.h>
 #include <mfapi.h>
+#include <mfidl.h>
 #include <mfvirtualcamera.h>
 #include <shellapi.h>
 
+#include <functional>
+
 #include <atomic>
-#include <condition_variable>
 #include <cstring>
+#include <cwchar>
 #include <mutex>
 #include <thread>
 
@@ -28,18 +31,35 @@ std::string hresult_text(const char* what, HRESULT hr) {
     return text;
 }
 
+// Runs `work` on a fresh multithreaded-apartment thread with Media Foundation started (the
+// virtual camera API must not run on an STA UI thread).
+HRESULT run_in_mta(const std::function<HRESULT()>& work) {
+    HRESULT result = E_FAIL;
+    std::thread([&] {
+        const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        const HRESULT mf = MFStartup(MF_VERSION);
+        result = SUCCEEDED(mf) ? work() : mf;
+        if (SUCCEEDED(mf)) {
+            MFShutdown();
+        }
+        if (SUCCEEDED(com)) {
+            CoUninitialize();
+        }
+    }).join();
+    return result;
+}
+
+// The camera is keyed off these parameters: the same ones reopen the same camera (and its
+// Windows settings, e.g. "Allow multiple apps").
+HRESULT open_camera(bool all_users, IMFVirtualCamera** camera) {
+    return MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource, MFVirtualCameraLifetime_System,
+                                 all_users ? MFVirtualCameraAccess_AllUsers : MFVirtualCameraAccess_CurrentUser,
+                                 kFriendlyName, kSourceClsid, nullptr, 0, camera);
+}
+
 }  // namespace
 
 struct VirtualCamera::Impl {
-    // The IMFVirtualCamera lives on its own MTA thread (the UI thread is STA).
-    std::thread owner;
-    std::mutex mutex;
-    std::condition_variable changed;
-    bool started = false;
-    bool stop_requested = false;
-    HRESULT result = S_OK;
-    std::string error;
-
     // Writer side: publish() runs on the decoder thread. Frames go to the session-local section
     // (read by media sources loaded inside camera apps) and, once the Frame Server's media source
     // has created it, to the Global section.
@@ -144,44 +164,6 @@ struct VirtualCamera::Impl {
         header->frame_counter = header->frame_counter + 1;
         header->heartbeat_ms = GetTickCount64();
     }
-
-    void run() {
-        HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        const bool com = SUCCEEDED(hr);
-        hr = MFStartup(MF_VERSION);
-        const bool mf = SUCCEEDED(hr);
-        IMFVirtualCamera* camera = nullptr;
-        if (mf) {
-            hr = MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource, MFVirtualCameraLifetime_Session,
-                                       MFVirtualCameraAccess_CurrentUser, kFriendlyName, kSourceClsid, nullptr, 0,
-                                       &camera);
-            if (SUCCEEDED(hr)) {
-                hr = camera->Start(nullptr);
-            }
-        }
-        {
-            std::lock_guard lock(mutex);
-            result = hr;
-            error = !mf ? hresult_text("MFStartup", hr)
-                        : FAILED(hr) ? hresult_text("Registering the virtual camera", hr) : std::string();
-            started = true;
-        }
-        changed.notify_all();
-        if (SUCCEEDED(hr)) {
-            std::unique_lock lock(mutex);
-            changed.wait(lock, [this] { return stop_requested; });
-        }
-        if (camera) {
-            camera->Remove();  // not Shutdown(): that would shut the media source down twice
-            camera->Release();
-        }
-        if (mf) {
-            MFShutdown();
-        }
-        if (com) {
-            CoUninitialize();
-        }
-    }
 };
 
 VirtualCamera::VirtualCamera() : impl_(std::make_unique<Impl>()) {}
@@ -231,38 +213,86 @@ bool VirtualCamera::install_source(const std::wstring& source_dll, std::string* 
     return true;
 }
 
-bool VirtualCamera::start(std::string* error) {
-    stop();
-    if (!source_registered()) {
-        *error = "the DJI VCam camera component is not installed";
+std::vector<std::wstring> VirtualCamera::list_cameras() {
+    std::vector<std::wstring> names;
+    run_in_mta([&names] {
+        IMFAttributes* attributes = nullptr;
+        HRESULT hr = MFCreateAttributes(&attributes, 1);
+        if (SUCCEEDED(hr)) {
+            hr = attributes->SetGUID(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
+        }
+        IMFActivate** devices = nullptr;
+        UINT32 count = 0;
+        if (SUCCEEDED(hr)) {
+            hr = MFEnumDeviceSources(attributes, &devices, &count);
+        }
+        for (UINT32 i = 0; i < count; ++i) {
+            wchar_t* name = nullptr;
+            UINT32 length = 0;
+            if (SUCCEEDED(devices[i]->GetAllocatedString(MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &name, &length))) {
+                names.emplace_back(name);
+                CoTaskMemFree(name);
+            }
+            devices[i]->Release();
+        }
+        CoTaskMemFree(devices);
+        if (attributes) {
+            attributes->Release();
+        }
+        return hr;
+    });
+    return names;
+}
+
+bool VirtualCamera::camera_registered() {
+    // Windows appends " (Windows Virtual Camera)" to the name we register.
+    for (const std::wstring& name : list_cameras()) {
+        if (name.rfind(kFriendlyName, 0) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool VirtualCamera::register_camera(bool all_users, std::string* error) {
+    const HRESULT hr = run_in_mta([all_users] {
+        IMFVirtualCamera* camera = nullptr;
+        HRESULT result = open_camera(all_users, &camera);
+        if (SUCCEEDED(result)) {
+            result = camera->Start(nullptr);  // system lifetime: it stays registered after this process
+            camera->Release();
+        }
+        return result;
+    });
+    if (FAILED(hr)) {
+        *error = hresult_text("Registering the DJI VCam webcam", hr);
         return false;
     }
-    impl_->started = false;
-    impl_->stop_requested = false;
-    impl_->owner = std::thread([this] { impl_->run(); });
-    std::unique_lock lock(impl_->mutex);
-    impl_->changed.wait(lock, [this] { return impl_->started; });
-    if (FAILED(impl_->result)) {
-        *error = impl_->error;
-        lock.unlock();
-        impl_->owner.join();
-        return false;
-    }
-    impl_->running = true;
     return true;
 }
+
+bool VirtualCamera::unregister_camera(bool all_users, std::string* error) {
+    const HRESULT hr = run_in_mta([all_users] {
+        IMFVirtualCamera* camera = nullptr;
+        HRESULT result = open_camera(all_users, &camera);
+        if (SUCCEEDED(result)) {
+            result = camera->Remove();
+            camera->Release();
+        }
+        return result;
+    });
+    if (FAILED(hr)) {
+        *error = hresult_text("Removing the DJI VCam webcam", hr);
+        return false;
+    }
+    return true;
+}
+
+void VirtualCamera::start() { impl_->running = true; }
 
 void VirtualCamera::stop() {
     impl_->running = false;
     std::lock_guard publishing(impl_->publish_mutex);
-    if (impl_->owner.joinable()) {
-        {
-            std::lock_guard lock(impl_->mutex);
-            impl_->stop_requested = true;
-        }
-        impl_->changed.notify_all();
-        impl_->owner.join();
-    }
     impl_->close_sections();
 }
 

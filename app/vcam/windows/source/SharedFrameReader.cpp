@@ -22,7 +22,9 @@ namespace
 		wchar_t folder[MAX_PATH];
 		if (!GetEnvironmentVariableW(L"ProgramData", folder, MAX_PATH))
 			return;
-		std::wstring path = std::wstring(folder) + L"\\DJI VCam\\logs";
+		std::wstring path = std::wstring(folder) + L"\\DJI VCam";
+		CreateDirectoryW(path.c_str(), nullptr);  // each level: the uninstaller removes the whole folder
+		path += L"\\logs";
 		CreateDirectoryW(path.c_str(), nullptr);
 		path += L"\\source-" + std::to_wstring(GetCurrentProcessId()) + L".log";
 		wchar_t message[512];
