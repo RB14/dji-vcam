@@ -13,6 +13,7 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QStatusBar>
+#include <QStringList>
 #include <QTimer>
 #include <QToolBar>
 #include <QSignalBlocker>
@@ -20,6 +21,8 @@
 #include <QToolButton>
 
 #include <algorithm>
+#include <cmath>
+#include <iterator>
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -468,7 +471,18 @@ void MainWindow::chooseWifiChannel() {
                 settings_->setValue(kCameraChannelKey, current);
             }
             const int best = djivcam::wifi::quietest_channel(*networks, ssid, current);
-            qInfo("wifi channel: %d networks heard, the camera on %d: %s", static_cast<int>(networks->size()), current,
+            // Each channel's interference as one equivalent signal level, to check the choice.
+            std::vector<djivcam::wifi::Network> others;
+            std::copy_if(networks->begin(), networks->end(), std::back_inserter(others),
+                         [&ssid](const auto& network) { return network.ssid != ssid; });
+            QStringList levels;
+            for (int channel : {1, 6, 11}) {
+                const double power = djivcam::wifi::interference(others, channel);
+                levels << (power > 0 ? QStringLiteral("%1: %2 dBm").arg(channel).arg(10 * std::log10(power), 0, 'f', 0)
+                                     : QStringLiteral("%1: none").arg(channel));
+            }
+            qInfo("wifi channel: %d networks heard (%s), the camera on %d: %s", static_cast<int>(networks->size()),
+                  qPrintable(levels.join(QStringLiteral(", "))), current,
                   best ? qPrintable(QStringLiteral("moving it to %1").arg(best)) : "staying");
             if (best) {
                 connector_->setWifiChannel(best);

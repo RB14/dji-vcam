@@ -30,8 +30,13 @@ TEST(WifiChannel, IgnoresTheCamerasOwnNetwork) {
 TEST(WifiChannel, StaysWhenTheGainIsSmall) {
     const std::vector<Network> networks = {{1, -70, "a"}, {6, -70, "b"}, {11, -70, "c"}};
     EXPECT_EQ(quietest_channel(networks, "cam", 6), 0);
-    // 1 dB (x1.26) is just enough to move
-    EXPECT_EQ(quietest_channel({{1, -71, "a"}, {6, -70, "b"}, {11, -70, "c"}}, "cam", 6), 1);
+}
+
+TEST(WifiChannel, NeedsAClearGainBetweenGridChannels) {
+    // Scan-to-scan noise of a couple of dB must not move the camera back and forth (off the grid,
+    // 1.3 times is enough: MovesAwayFromACrowdedChannel)
+    EXPECT_EQ(quietest_channel({{1, -72, "a"}, {6, -70, "b"}, {11, -70, "c"}}, "cam", 6), 0);
+    EXPECT_EQ(quietest_channel({{1, -74, "a"}, {6, -70, "b"}, {11, -70, "c"}}, "cam", 6), 1);  // 4 dB
 }
 
 TEST(WifiChannel, UnknownCurrentChannelTakesTheQuietest) {

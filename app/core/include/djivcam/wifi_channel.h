@@ -23,8 +23,9 @@ struct Network {
 double interference(const std::vector<Network>& networks, int channel);
 
 // The channel to move the camera to, or 0 to stay: the quietest of 1, 6 and 11, when the camera's
-// current channel (0 if unknown) carries at least 1.25 times its interference. The camera's own
-// network (`camera_ssid`) is not counted.
+// current channel (0 if unknown) carries more than 1.25 times its interference, or 2 times if the
+// camera is already on 1, 6 or 11 (scans are noisy). The camera's own network (`camera_ssid`) is
+// not counted.
 int quietest_channel(const std::vector<Network>& networks, const std::string& camera_ssid, int current_channel);
 
 }  // namespace djivcam::wifi
