@@ -51,9 +51,9 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 - [x] **Camera Wi-Fi channel**: `07/2B` moves the camera's access point (protocol-notes.md 3.12);
       Options → Camera Wi-Fi channel (automatic from the bridge's scan, or 1 / 6 / 11), applied in
       the Bluetooth session before the live view; `dji-vcam-cli --ble --wifi-channel N`
-- [~] **Webcam pacing**: the media source handed out a sample whenever asked (Chrome measured
-      52 fps on a 30 fps camera, repeated frames); it now waits for the app's next frame. To check
-      in Chrome once installed
+- [x] **Webcam pacing**: the media source handed out a sample whenever asked (Chrome measured
+      52 fps on a 30 fps camera, repeated frames); it now waits for the app's next frame: Chrome
+      measures ~30 fps (2026-09-25)
 - [ ] Multi-app webcam: check that Windows' "Allow multiple apps" works for DJI VCam and stays on
 
 - [~] **Windows installer**: Inno Setup script (installs the app, registers the virtual camera,
