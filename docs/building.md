@@ -82,17 +82,19 @@ winget install JRSoftware.InnoSetup --scope user     # once, for the installer (
 app/scripts/package-windows.sh
 ```
 
-This builds the Release configuration and writes to `binaries/` (git-ignored):
+This builds the Release configuration and writes to `binaries/` (git-ignored), named with the
+full version (see [Versions and releases](#versions-and-releases)):
 
-- `dji-vcam-<version>-win64.zip`: the portable app folder (Qt, FFmpeg and Visual C++ runtime
+- `dji-vcam-<version>-x64.zip`: the portable app folder (Qt, FFmpeg and Visual C++ runtime
   DLLs, the virtual camera's media source, the CLI, the user guide and license texts).
-- `dji-vcam-setup-<version>.exe`: the installer, made from the same folder by
+- `dji-vcam-setup-<version>-x64.exe`: the installer, made from the same folder by
   `app/packaging/windows/dji-vcam.iss` (skipped when Inno Setup is not installed). It installs
   into Program Files, registers the media source from there, adds a Windows Firewall rule for the
   app and a Start-menu entry, and its uninstaller removes all of it (stopping the Windows camera
   services first, since they keep the media source loaded).
 
-The version comes from `project(dji-vcam VERSION ...)` in `app/CMakeLists.txt`.
+Packaging runs from WSL for now (a bash script); on Windows without WSL, build natively as above
+and run the app from the build folder.
 
 ### Testing without the camera
 
@@ -181,7 +183,61 @@ idf.py build
 - **Updates** afterwards, with no buttons: `./dji-vcam.sh ota-bridge` (sends the image over the
   bridge's USB console; unconfirmed images roll back automatically).
 
+**On Windows without WSL**: install ESP-IDF v5.5 with Espressif's
+[Windows installer](https://docs.espressif.com/projects/esp-idf/en/v5.5/esp32s3/get-started/windows-setup.html)
+and use its "ESP-IDF 5.5 PowerShell":
+
+```powershell
+cd firmware\usb-wifi-bridge
+idf.py build
+idf.py -p COM3 flash          # first flash: hold BOOT while plugging the board's "USB" port in
+```
+
+Updates without buttons: `python tools\bridge_ota.py --port COM8` (the bridge's console port; see
+[Python tools](#python-tools)). Without building anything, a release's firmware image can also be
+flashed from the browser: [installing.md](installing.md#flash-the-esp32-s3-bridge).
+
 ## Python tools
 
 `./dji-vcam.sh` creates a Windows virtual environment in `.venv`, installs `requirements.txt` and
 dispatches to the tools (`./dji-vcam.sh help`). `./dji-vcam.sh test` runs the Python unit tests.
+
+The tools run on Windows Python either way; without WSL, set up the same environment in PowerShell
+and call a tool directly (`dji-vcam.sh` shows which script each command runs):
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python tools\bridge_ota.py --port COM8     # e.g. ./dji-vcam.sh ota-bridge
+```
+
+## Versions and releases
+
+- **One version number**, [Semantic Versioning](https://semver.org) `MAJOR.MINOR.PATCH`, written
+  only in `project(dji-vcam VERSION ...)` in `app/CMakeLists.txt`. While the major version is 0,
+  the minor version grows with features and the patch version with fixes.
+- **The full version says where a build comes from** (`app/cmake/DjiVcamVersion.cmake`, printed by
+  `app/scripts/version.sh`): `0.1.0` for a build of exactly the tag `v0.1.0` with no uncommitted
+  changes, `0.1.0-dev+g1a2b3c4` for any other commit (`.dirty` with uncommitted changes). It is in
+  the file names of the installer and the ZIP, the Details tab of `dji-vcam.exe`,
+  `dji-vcam-cli.exe` and `djivcam-source.dll` (their numeric file version is `0.1.0.0`; builds that
+  are not releases are marked pre-release), the app's *Options → About* and log, and
+  `dji-vcam-cli --version`. Native builds read git themselves; the WSL-driven Windows build passes
+  the version in (`-DDJIVCAM_VERSION=`), since it compiles a copy of the sources without git.
+- **Releases are git tags** `vX.Y.Z` with a GitHub release holding the x64 installer, the portable
+  ZIP, the bridge firmware image and their SHA-256 checksums. Only x64 is built: the app needs
+  Windows 11, which has no 32-bit edition, and the camera service that loads the webcam's media
+  source is 64-bit.
+- **The bridge firmware has its own version** (`PROJECT_VER` in
+  `firmware/usb-wifi-bridge/CMakeLists.txt`, shown by its `version` console command), named in the
+  image `dji-vcam-bridge-<version>-esp32s3.bin` and in each release.
+
+To publish a release:
+
+1. Move the changes from *Unreleased* in `CHANGELOG.md` to a section `## X.Y.Z (date)`, set
+   `project(dji-vcam VERSION X.Y.Z)`, commit and push.
+2. Run `app/scripts/release-github.sh` from a shell where `idf.py` works (after ESP-IDF's
+   `export.sh`), with `gh` logged in. It tags HEAD `vX.Y.Z`, builds everything from it and creates
+   the release with that changelog section as its notes.
+3. Start the next version: set `project()` to the next minor version, so that builds in between are
+   named after it (`0.2.0-dev+g...`).

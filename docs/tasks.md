@@ -56,7 +56,7 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       52 fps on a 30 fps camera, repeated frames); it now waits for the app's next frame: Chrome
       measures ~30 fps (2026-09-25)
 - [x] **Windows installer**: Inno Setup script (installs the app, registers the virtual camera,
-      Start-menu entry, uninstaller); output `binaries/dji-vcam-setup-<version>.exe` (git-ignored)
+      Start-menu entry, uninstaller); output `binaries/dji-vcam-setup-<version>-x64.exe` (git-ignored)
       - [x] Installer script, packaging, app-local Visual C++ runtime
       - [x] Tested install, upgrade and uninstall (2026-09-25)
       - [x] App icon (exe, windows, installer) and version info
@@ -75,7 +75,15 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 - [ ] Bluetooth wake from the ESP32 bridge (the S3 has BLE): no Bluetooth needed on the computer
 - [ ] Other camera models: test the Action 4/6, Osmo 360, Pocket 3 (the app names them, only 0x15
       tested); prefer known camera models in the Bluetooth search (a DJI Mic could be picked first)
-- [ ] Releases: signed installer and bridge firmware as GitHub release downloads
+- [x] Versions and releases: SemVer in `project()`, full version from git (`0.1.0-dev+g<commit>`)
+      in file names, version resources, About and `--version`; `release-github.sh` publishes the
+      installer, ZIP, bridge firmware image and checksums (v0.1.0, 2026-09-25)
+- [ ] Code-signed installer (SmartScreen warns today)
+- [ ] ARM64 build (Windows 11 on ARM): Qt and FFmpeg have ARM64 builds; the media source must be
+      ARM64 too. No 32-bit build: Windows 11 has no 32-bit edition
+- [ ] Packaging and the tools wrapper in PowerShell too (they need WSL today)
+- [ ] `update-vcam-source.ps1` still swaps the ProgramData copy; the installer registers the DLL
+      from Program Files
 - [ ] Wi-Fi adapter link: detect a second adapter, join the camera AP on it, keep internet routing;
       a 5 GHz USB dongle is the way to 5 GHz (the ESP32-C5 has no usable USB device mode in ESP-IDF,
       so it cannot replace the S3 as a USB network adapter)

@@ -14,8 +14,7 @@ its live preview, instead of the camera's RTMP push.
 ## Requirements
 
 > **Tested only with the DJI Osmo Action 5 Pro.** Other DJI cameras may work or may need changes:
-> see [Other DJI cameras](#other-dji-cameras). There are no prebuilt downloads yet: build the app
-> (and its installer) from source, see [docs/building.md](docs/building.md).
+> see [Other DJI cameras](#other-dji-cameras).
 
 | What | Why |
 |---|---|
@@ -45,6 +44,23 @@ preview over its access point the same way (as the open-source PocketShow shows)
 or need small changes (a model-specific command, another Bluetooth detail); nobody has tried yet.
 Reports are welcome.
 
+## Installation
+
+1. **Download** the installer `dji-vcam-setup-<version>-x64.exe` and the bridge firmware
+   `dji-vcam-bridge-<version>-esp32s3.bin` from the
+   [latest release](https://github.com/RB14/dji-vcam/releases/latest).
+2. **Flash the ESP32-S3 board** in Chrome or Edge, no tools to install: hold its BOOT button while
+   plugging its "USB" port in, open [Espressif's web flasher](https://espressif.github.io/esptool-js/),
+   Connect, Flash Address `0x0`, choose the firmware file, Program; then plug the board in again.
+3. **Run the installer** and approve the administrator prompt (it is not code-signed yet: if
+   SmartScreen warns, *More info → Run anyway*). It installs the app and the **DJI VCam** webcam.
+4. **Prepare the camera**: activate it once with DJI Mimo, set its Wi-Fi band to 2.4 GHz, keep it on.
+5. **Start DJI VCam and click Connect**: approve the pairing request on the camera screen the first
+   time. The live view appears, and apps can pick the **DJI VCam** webcam.
+
+Step by step, with every option and troubleshooting: [docs/installing.md](docs/installing.md). To
+build from source instead: [docs/building.md](docs/building.md).
+
 ## Documentation
 
 | Document | For |
@@ -55,6 +71,7 @@ Reports are welcome.
 | [docs/protocol-notes.md](docs/protocol-notes.md) | The camera protocol: Bluetooth, datalink, live view, findings |
 | [docs/camera-controls.md](docs/camera-controls.md) | Camera settings over DUML: every Mimo control, status topics, experiments |
 | [docs/tasks.md](docs/tasks.md) | The living task list |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 | [firmware/usb-wifi-bridge/README.md](firmware/usb-wifi-bridge/README.md) | The ESP32-S3 USB Wi-Fi bridge |
 
 ## How it works
@@ -117,7 +134,10 @@ What is still missing (the full list: [docs/tasks.md](docs/tasks.md)):
 - **Linux**: Bluetooth over BlueZ, a v4l2loopback virtual webcam, the network link.
 - **Camera controls**: the remaining DJI Mimo settings (timelapse and hyperlapse, slow motion, photo
   options, audio, AE lock, spot metering, HDR) and status (temperature, timecode).
-- **Releases**: a signed installer and the bridge firmware as downloads.
+- **Code signing**: the installer is not signed yet, so Windows SmartScreen warns on first run.
+- **ARM64**: a build for Windows 11 on ARM (Snapdragon laptops); only x64 is built today.
+- **Windows-only tooling**: packaging and the tools wrapper are bash scripts run from WSL; the app
+  and the firmware already build natively on Windows.
 - **Latency**: hand the decoded GPU frames to the preview and the webcam without copies.
 
 ## License

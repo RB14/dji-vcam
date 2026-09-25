@@ -15,18 +15,42 @@ webcam.
   when it is another one.
 - A way for the computer to reach the camera's own Wi-Fi while keeping your normal internet
   connection. Today that is the **ESP32-S3 USB bridge** (an ESP32-S3-DevKitC-1 N16R8 flashed with
-  `firmware/usb-wifi-bridge`, plugged in through its "USB" port). A second USB Wi-Fi adapter will
+  the bridge firmware, see below, plugged in through its "USB" port). A second USB Wi-Fi adapter will
   also work once that link type lands.
+
+## Download
+
+Everything is on the [Releases page](https://github.com/RB14/dji-vcam/releases/latest):
+`dji-vcam-setup-<version>-x64.exe` (installer), `dji-vcam-<version>-x64.zip` (portable),
+`dji-vcam-bridge-<version>-esp32s3.bin` (bridge firmware) and `SHA256SUMS.txt`.
+
+## Flash the ESP32-S3 bridge
+
+Once per board, in **Chrome or Edge** (the page uses Web Serial; not Safari or Firefox):
+
+1. Hold the board's **BOOT** button while plugging its **"USB"** port into the computer, then let go
+   (the board starts in download mode).
+2. Open Espressif's web flasher, [espressif.github.io/esptool-js](https://espressif.github.io/esptool-js/),
+   click **Connect** and pick the board's port (*USB JTAG/serial debug unit*).
+3. Set **Flash Address** to `0x0`, choose the file `dji-vcam-bridge-<version>-esp32s3.bin` and
+   click **Program**.
+4. When it is done, unplug the board and plug it in again (without BOOT). Windows now shows a new
+   network adapter; the app configures the bridge by itself.
+
+Flashing a board that already runs the bridge erases its stored camera Wi-Fi details; the app sets
+them again at the next Connect. Developers can flash from a command line instead: see
+[building.md](building.md#esp32-s3-bridge-firmware).
 
 ## Install
 
-**Installer (recommended)**: run `dji-vcam-setup-<version>.exe` and approve the administrator
-prompt. It installs DJI VCam into `C:\Program Files\DJI VCam`, registers the **DJI VCam** webcam
+**Installer (recommended)**: run `dji-vcam-setup-<version>-x64.exe` and approve the administrator
+prompt. The installer is not code-signed yet, so Windows SmartScreen may say *"Windows protected
+your PC"*: click **More info → Run anyway**. It installs DJI VCam into `C:\Program Files\DJI VCam`, registers the **DJI VCam** webcam
 for all users, lets the camera's video through Windows Firewall and adds a Start-menu entry. To uninstall, use
 *Settings → Apps → Installed apps → DJI VCam*; that removes all of it again. Running a newer
 installer upgrades in place.
 
-**Portable ZIP**: extract `dji-vcam-<version>-win64.zip` anywhere and run `dji-vcam.exe`. If
+**Portable ZIP**: extract `dji-vcam-<version>-x64.zip` anywhere and run `dji-vcam.exe`. If
 Windows Firewall asks, allow access: the video arrives as network traffic from the camera. The
 first time the virtual camera is turned on, the app installs the webcam component itself (one
 administrator prompt) and registers the webcam for your user account.
@@ -141,6 +165,10 @@ as a PNG in `Pictures\DJI VCam`.
 - **Configure the ESP32 USB bridge automatically**: turn off if you connect to the camera's Wi-Fi
   some other way.
 - **Forget the paired camera**: the next connection pairs again (approve it on the camera).
+
+- **About DJI VCam**: the version (e.g. `0.1.0`); please include it, and the log from
+  `%LOCALAPPDATA%\dji-vcam\dji-vcam\logs`, when reporting a problem on
+  [GitHub](https://github.com/RB14/dji-vcam/issues).
 
 ## Troubleshooting
 
