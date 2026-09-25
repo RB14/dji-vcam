@@ -62,3 +62,14 @@ app/scripts/build-windows.sh RelWithDebInfo -DDJIVCAM_BUILD_GUI=ON  # app + test
 ```
 
 Details and all prerequisites: [docs/building.md](docs/building.md).
+
+## License
+
+MIT, see [LICENSE](LICENSE). Third-party components keep their own licenses: Qt (LGPL-3.0) and
+FFmpeg (LGPL-2.1-or-later), both dynamically linked; the virtual camera's media source is adapted
+from VCamSample (MIT) and uses the Windows Implementation Libraries (MIT); on Linux the build
+fetches SimpleBLE (BUSL-1.1) until our own BlueZ code replaces it. The Windows packages carry the
+license texts in `licenses/`.
+
+DJI, Osmo and Mimo are trademarks of SZ DJI Technology Co., Ltd. This project is not affiliated
+with or endorsed by DJI.

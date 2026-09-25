@@ -10,7 +10,7 @@
 #   pull     copy the pcap and btsnoop log into captures/<timestamp>/
 set -euo pipefail
 
-ADB="${ADB:-adb.exe}"
+ADB="${ADB:-adb.exe}"  # Windows adb on the PATH, or set ADB to its path
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CAPTURE_ROOT="$SCRIPT_DIR/../captures"
 REMOTE_PCAP=/data/local/tmp/mimo.pcap
