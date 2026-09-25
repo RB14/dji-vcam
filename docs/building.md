@@ -30,7 +30,7 @@ python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtserialport
 FFmpeg 8.1 LGPL shared development build (headers, import libraries and DLLs): download
 `ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip` from
 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases) and extract it to
-`%LOCALAPPDATA%\dji-vcam\deps\ffmpeg` (so that `include\libavcodec\avcodec.h` exists there).
+`%USERPROFILE%\.dji-vcam\deps\ffmpeg` (so that `include\libavcodec\avcodec.h` exists there).
 From WSL, `app/scripts/setup-windows-deps.sh` does this for you.
 
 SimpleBLE and GoogleTest are downloaded by CMake at configure time.
@@ -41,10 +41,14 @@ SimpleBLE and GoogleTest are downloaded by CMake at configure time.
 cmake -S app -B build -G "Visual Studio 17 2022" -A x64 `
       -DDJIVCAM_BUILD_GUI=ON `
       -DCMAKE_PREFIX_PATH="$env:USERPROFILE\Qt\6.8.3\msvc2022_64" `
-      -DFFMPEG_DIR="$env:LOCALAPPDATA\dji-vcam\deps\ffmpeg"
+      -DFFMPEG_DIR="$env:USERPROFILE\.dji-vcam\deps\ffmpeg"
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
+
+> Keep the source and build folders out of `AppData` and `Temp`: MSBuild's file tracker ignores
+> reads there, so a change to a header would not recompile the files that include it, and the
+> result can mix old and new class layouts (this once crashed the media source).
 
 The runnable app is `build\gui\Release\dji-vcam.exe`: the build copies the Qt runtime
 (`windeployqt`), the FFmpeg DLLs and the virtual camera's media source (`djivcam-source.dll`) next
@@ -63,7 +67,7 @@ the camera services, swaps and re-registers the DLL, and starts them again.
 ### Build from WSL
 
 MSBuild cannot work from `\\wsl.localhost` paths, so the script mirrors `app/` to
-`%LOCALAPPDATA%\dji-vcam\src` and builds in `%LOCALAPPDATA%\dji-vcam\build`:
+`%USERPROFILE%\.dji-vcam\src` and builds in `%USERPROFILE%\.dji-vcam\build`:
 
 ```bash
 app/scripts/setup-windows-deps.sh                                # FFmpeg, once

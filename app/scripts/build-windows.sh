@@ -5,9 +5,11 @@
 # to a Windows-local folder first and built there with the Visual Studio 2022 generator.
 #
 # Usage: app/scripts/build-windows.sh [Debug|Release] [extra cmake -D options...]
-# Env:   DJIVCAM_WIN_ROOT  Windows-side work folder (default %LOCALAPPDATA%\dji-vcam)
+# Env:   DJIVCAM_WIN_ROOT  Windows-side work folder (default %USERPROFILE%\.dji-vcam). Not under
+#                          AppData or Temp: MSBuild's file tracker ignores reads there, so header
+#                          changes would not trigger recompiles (mixed class layouts, crashes).
 #        QT_DIR             Qt MSVC kit (default %USERPROFILE%\Qt\6.8.3\msvc2022_64)
-#        FFMPEG_DIR         FFmpeg shared dev build (default %LOCALAPPDATA%\dji-vcam\deps\ffmpeg)
+#        FFMPEG_DIR         FFmpeg shared dev build (default <work folder>\deps\ffmpeg)
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,7 +17,7 @@ CONFIG="${1:-Debug}"
 shift || true
 
 win_env() { powershell.exe -NoProfile -Command "\$env:$1" | tr -d '\r'; }
-WIN_ROOT="${DJIVCAM_WIN_ROOT:-$(win_env LOCALAPPDATA)\\dji-vcam}"
+WIN_ROOT="${DJIVCAM_WIN_ROOT:-$(win_env USERPROFILE)\\.dji-vcam}"
 QT_DIR="${QT_DIR:-$(win_env USERPROFILE)\\Qt\\6.8.3\\msvc2022_64}"
 FFMPEG_DIR="${FFMPEG_DIR:-$WIN_ROOT\\deps\\ffmpeg}"
 SRC_WIN="$WIN_ROOT\\src"

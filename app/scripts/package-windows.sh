@@ -18,7 +18,7 @@ VERSION="$(sed -n 's/^project(dji-vcam VERSION \([0-9.]*\).*/\1/p' "$APP_DIR/CMa
 NAME="dji-vcam-$VERSION-win64"
 
 win_env() { powershell.exe -NoProfile -Command "\$env:$1" | tr -d '\r'; }
-WIN_ROOT="${DJIVCAM_WIN_ROOT:-$(win_env LOCALAPPDATA)\\dji-vcam}"
+WIN_ROOT="${DJIVCAM_WIN_ROOT:-$(win_env USERPROFILE)\\.dji-vcam}"  # as in build-windows.sh
 BUILD="$(wslpath -u "$WIN_ROOT")/build"
 FFMPEG="$(wslpath -u "${FFMPEG_DIR:-$WIN_ROOT\\deps\\ffmpeg}")"
 
