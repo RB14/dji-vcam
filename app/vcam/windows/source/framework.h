@@ -35,6 +35,7 @@
 #include "winrt\Windows.ApplicationModel.h"
 
 // std
+#include <chrono>
 #include <string>
 #include <format>
 

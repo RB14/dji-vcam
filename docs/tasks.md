@@ -52,8 +52,9 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       live view slowed to a few fps (the bridge could not get its acks out). The bridge's `scan`
       sees the neighbours; move the camera to the quietest 2.4 GHz channel. `07/44` get_frequency
       answers `00 00 01`, country code `07/19` "FI"; `07/2B` set_wifi_frequency is untested
-- [ ] **Webcam pacing**: the media source hands out a sample whenever asked (Chrome measured
-      52 fps on a 30 fps camera, repeated frames); pace it to 30 fps / new frames only
+- [~] **Webcam pacing**: the media source handed out a sample whenever asked (Chrome measured
+      52 fps on a 30 fps camera, repeated frames); it now waits for the app's next frame. To check
+      in Chrome once installed
 - [ ] Multi-app webcam: check that Windows' "Allow multiple apps" works for DJI VCam and stays on
 
 - [~] **Windows installer**: Inno Setup script (installs the app, registers the virtual camera,

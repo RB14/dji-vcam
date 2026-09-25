@@ -197,6 +197,9 @@ STDMETHODIMP MediaStream::GetStreamDescriptor(IMFStreamDescriptor** ppStreamDesc
 STDMETHODIMP MediaStream::RequestSample(IUnknown* pToken)
 {
 	//WINTRACE(L"MediaStream::RequestSample pToken:%p", pToken);
+	// Outside the lock (Stop() and Shutdown() need it): one sample per new frame from the app, not
+	// a stale repeat whenever the client asks (Chrome asked for ~52 per second at 30 fps).
+	_reader.WaitForNextFrame();
 	winrt::slim_lock_guard lock(_lock);
 	RETURN_HR_IF(MF_E_SHUTDOWN, !_allocator || !_queue);
 

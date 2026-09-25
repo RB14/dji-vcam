@@ -145,6 +145,24 @@ void SharedFrameReader::FillNoSignal(BYTE* y, LONG pitch)
 		memset(y + (size_t)row * pitch, kNeutralChroma, vc::kWidth);
 }
 
+void SharedFrameReader::WaitForNextFrame()
+{
+	using namespace std::chrono;
+	const auto start = steady_clock::now();
+	for (;;)
+	{
+		const auto now = steady_clock::now();
+		auto header = static_cast<const vc::SectionHeader*>(_view);
+		const bool publishing = header && header->magic == vc::kMagic &&
+			GetTickCount64() - header->heartbeat_ms <= vc::kStaleAfterMs;
+		if (publishing && header->frame_counter != _delivered)
+			return;  // a frame the client has not had yet
+		if (publishing ? now - start >= 100ms : now - _lastFill >= 33ms)
+			return;
+		Sleep(1);
+	}
+}
+
 HRESULT SharedFrameReader::Fill(IMFSample* sample)
 {
 	RETURN_HR_IF_NULL(E_POINTER, sample);
@@ -152,6 +170,9 @@ HRESULT SharedFrameReader::Fill(IMFSample* sample)
 		LOG_IF_FAILED(EnsureSection());  // retried on every frame until it works
 	if (_view && _writable)
 		static_cast<vc::SectionHeader*>(_view)->reader_heartbeat_ms = GetTickCount64();
+	_lastFill = std::chrono::steady_clock::now();
+	if (_view)
+		_delivered = static_cast<const vc::SectionHeader*>(_view)->frame_counter;  // before the copy: never skips one
 
 	wil::com_ptr_nothrow<IMFMediaBuffer> buffer;
 	RETURN_IF_FAILED(sample->GetBufferByIndex(0, &buffer));
