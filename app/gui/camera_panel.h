@@ -41,6 +41,9 @@ private:
     QComboBox* addSetting(QFormLayout* form, djivcam::camera::Setting setting, const QString& label);
     void updateSetting(const SettingBox& row);
     void updateFormat();
+    // Allowed (resolution, frame rate) pairs: the camera's list, else the usual ones.
+    std::vector<std::pair<int, int>> formats() const;
+    void setResolution(int resolution);
     void updateWhiteBalance();
     void updateShutter();
     void updateStatus();
@@ -54,7 +57,8 @@ private:
     QLabel* status_;
     QPushButton* record_;
     QPushButton* photo_;
-    QComboBox* format_;
+    QComboBox* resolution_;
+    QComboBox* frame_rate_;
     QComboBox* white_balance_;
     QComboBox* shutter_;
     std::vector<SettingBox> settings_;

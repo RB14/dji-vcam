@@ -203,7 +203,12 @@ void LiveViewSession::run(std::stop_token stop) {
                     on_video_(video);
                 }
             },
-            config_.gap_timeout);
+            config_.gap_timeout,
+            [this](std::uint64_t) {
+                if (on_gap_) {
+                    on_gap_();
+                }
+            });
         std::uint8_t heartbeat_counter = 0;
         unsigned heartbeat_ticks = 0;
         const std::uint64_t lost_base = lost_;

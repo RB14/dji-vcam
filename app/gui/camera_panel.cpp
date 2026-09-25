@@ -11,6 +11,9 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <cstdlib>
+#include <span>
+#include <string>
 
 #include "djivcam/camera_controller.h"
 
@@ -64,7 +67,8 @@ CameraPanel::CameraPanel(QWidget* parent)
       status_(new QLabel(this)),
       record_(new QPushButton(tr("Start recording"), this)),
       photo_(new QPushButton(tr("Take photo"), this)),
-      format_(new QComboBox(this)),
+      resolution_(new QComboBox(this)),
+      frame_rate_(new QComboBox(this)),
       white_balance_(new QComboBox(this)),
       shutter_(new QComboBox(this)),
       refresh_(new QTimer(this)) {
@@ -90,7 +94,8 @@ CameraPanel::CameraPanel(QWidget* parent)
 
     QFormLayout* shooting = group(tr("Shooting"));
     addSetting(shooting, Setting::Mode, tr("Mode"));
-    shooting->addRow(tr("Format"), format_);
+    shooting->addRow(tr("Resolution"), resolution_);
+    shooting->addRow(tr("Frame rate"), frame_rate_);
     addSetting(shooting, Setting::Codec, tr("Codec"));
 
     QFormLayout* image = group(tr("Image"));
@@ -123,10 +128,10 @@ CameraPanel::CameraPanel(QWidget* parent)
             controller_->take_photo();
         }
     });
-    connect(format_, &QComboBox::activated, this, [this](int index) {
-        const int format = format_->itemData(index).toInt();
-        if (controller_) {
-            controller_->set_format(format >> 8, format & 0xFF);
+    connect(resolution_, &QComboBox::activated, this, [this](int index) { setResolution(resolution_->itemData(index).toInt()); });
+    connect(frame_rate_, &QComboBox::activated, this, [this](int index) {
+        if (controller_ && state_.resolution) {
+            controller_->set_format(*state_.resolution, frame_rate_->itemData(index).toInt());
         }
     });
     connect(white_balance_, &QComboBox::activated, this, [this](int index) {
@@ -208,31 +213,78 @@ void CameraPanel::updateSetting(const SettingBox& row) {
               [&](int code) { return QString::fromStdString(djivcam::camera::describe(row.setting, code)); });
 }
 
-void CameraPanel::updateFormat() {
-    std::vector<std::pair<int, int>> formats = state_.allowed_formats;
-    if (formats.empty()) {  // the camera has not listed them: offer the usual ones
-        for (const auto& resolution : djivcam::camera::resolutions()) {
-            for (const auto& rate : djivcam::camera::frame_rates()) {
-                const bool high_rate = rate.code == 0x0A || rate.code == 0x07 || rate.code == 0x13 || rate.code == 0x08;
-                const bool four_three = resolution.code == 0x67 || resolution.code == 0x5F;
-                const bool full_hd = resolution.code == 0x0A;
-                const bool very_high = rate.code == 0x13 || rate.code == 0x08;  // 200 / 240 fps: 1080p only
-                if (resolution.offered_by_default && !(four_three && high_rate) && !(very_high && !full_hd)) {
-                    formats.emplace_back(resolution.code, rate.code);
-                }
+std::vector<std::pair<int, int>> CameraPanel::formats() const {
+    if (!state_.allowed_formats.empty()) {
+        return state_.allowed_formats;
+    }
+    std::vector<std::pair<int, int>> usual;  // the camera has not listed them yet
+    for (const auto& resolution : djivcam::camera::resolutions()) {
+        for (const auto& rate : djivcam::camera::frame_rates()) {
+            const bool high_rate = rate.code == 0x0A || rate.code == 0x07 || rate.code == 0x13 || rate.code == 0x08;
+            const bool four_three = resolution.code == 0x67 || resolution.code == 0x5F;
+            const bool very_high = rate.code == 0x13 || rate.code == 0x08;  // 200 / 240 fps: 1080p only
+            if (resolution.offered_by_default && !(four_three && high_rate) && !(very_high && resolution.code != 0x0A)) {
+                usual.emplace_back(resolution.code, rate.code);
             }
         }
     }
-    std::vector<std::pair<QString, int>> items;
-    for (const auto& [resolution, rate] : formats) {
-        items.emplace_back(QString::fromStdString(djivcam::camera::describe_format(resolution, rate)), (resolution << 8) | rate);
+    return usual;
+}
+
+void CameraPanel::updateFormat() {
+    const auto allowed = formats();
+    const auto label = [](std::span<const djivcam::camera::Choice> list, int code) {
+        for (const auto& choice : list) {
+            if (choice.code == code) {
+                return QString::fromUtf8(choice.label.data(), static_cast<int>(choice.label.size()));
+            }
+        }
+        return QStringLiteral("code 0x%1").arg(code, 2, 16, QLatin1Char('0'));
+    };
+    // Resolutions in the table's order (largest first), frame rates ascending.
+    std::vector<std::pair<QString, int>> resolutions;
+    for (const auto& resolution : djivcam::camera::resolutions()) {
+        if (std::ranges::any_of(allowed, [&](const auto& format) { return format.first == resolution.code; })) {
+            resolutions.emplace_back(label(djivcam::camera::resolutions(), resolution.code), resolution.code);
+        }
     }
-    std::optional<int> current;
-    if (state_.resolution && state_.frame_rate) {
-        current = (*state_.resolution << 8) | *state_.frame_rate;
+    set_items(resolution_, std::move(resolutions), state_.resolution,
+              [&](int code) { return label(djivcam::camera::resolutions(), code); });
+
+    std::vector<std::pair<QString, int>> rates;
+    for (const auto& rate : djivcam::camera::frame_rates()) {
+        if (std::ranges::any_of(allowed, [&](const auto& format) {
+                return format.second == rate.code && (!state_.resolution || format.first == *state_.resolution);
+            })) {
+            rates.emplace_back(tr("%1 fps").arg(label(djivcam::camera::frame_rates(), rate.code)), rate.code);
+        }
     }
-    set_items(format_, std::move(items), current,
-              [](int code) { return QString::fromStdString(djivcam::camera::describe_format(code >> 8, code & 0xFF)); });
+    set_items(frame_rate_, std::move(rates), state_.frame_rate,
+              [&](int code) { return tr("%1 fps").arg(label(djivcam::camera::frame_rates(), code)); });
+}
+
+void CameraPanel::setResolution(int resolution) {
+    if (!controller_) {
+        return;
+    }
+    // One command sets both: keep the frame rate if the new resolution allows it, else take the
+    // allowed rate closest to it.
+    const auto fps_of = [](int code) {
+        for (const auto& rate : djivcam::camera::frame_rates()) {
+            if (rate.code == code) {
+                return std::stoi(std::string(rate.label));
+            }
+        }
+        return 0;
+    };
+    const int current = state_.frame_rate.value_or(0x03);  // 30 fps if unknown
+    std::optional<int> best;
+    for (const auto& [res, rate] : formats()) {
+        if (res == resolution && (!best || std::abs(fps_of(rate) - fps_of(current)) < std::abs(fps_of(*best) - fps_of(current)))) {
+            best = rate;
+        }
+    }
+    controller_->set_format(resolution, best.value_or(current));
 }
 
 void CameraPanel::updateWhiteBalance() {
@@ -315,7 +367,8 @@ void CameraPanel::updateEnabled() {
         }
         row.box->setEnabled(enabled);
     }
-    format_->setEnabled(live && !state_.recording);
+    resolution_->setEnabled(live && !state_.recording);
+    frame_rate_->setEnabled(live && !state_.recording && state_.resolution.has_value());
     shutter_->setEnabled(live && manual);
     white_balance_->setEnabled(live);
     record_->setEnabled(live);

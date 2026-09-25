@@ -49,6 +49,8 @@ administrator prompt).
    | Connecting to the camera | Starting the video connection |
    | Streaming | Video is flowing; the figures on the right are explained below |
 
+While the app has no video, the current step is also shown large in the middle of the window.
+
 While streaming, the right side of the status bar shows the resolution, frames per second,
 bitrate, **delay** (the longest time a frame spent inside the app in the last second, normally
 10-20 ms), **loss** (video packets that never arrived), **recovered** and **dup** (packets the
@@ -83,7 +85,8 @@ like the DJI Mimo app while the camera is connected:
 
 - **Start / Stop recording** and **Take photo** (in Photo mode), with the recording time, battery
   and memory card status above the settings.
-- **Shooting**: mode, recording format (resolution and aspect ratio, frame rate), codec.
+- **Shooting**: mode, resolution (with its aspect ratio), frame rate, codec. Picking a resolution
+  keeps the frame rate when the camera allows it, else takes the closest allowed one.
 - **Image**: stabilization (RockSteady, RockSteady+, HorizonSteady, HorizonBalancing), Daily/Sport,
   FOV.
 - **Exposure**: auto or manual; EV, auto ISO limit and anti-flicker in auto; ISO and shutter speed
@@ -97,6 +100,14 @@ the camera cannot change while recording are disabled during a recording.
 
 > The camera controls are new and have not been tried on a camera yet; report anything that does
 > not match what the camera shows.
+
+## Lost video
+
+The camera's Wi-Fi occasionally loses a video packet, mostly while the camera moves; the camera does
+not send it again, so the picture shows damaged, "smeared" frames until its next keyframe (at most
+one second). By default the app keeps showing them, so the picture stays live. **Options → Freeze
+the picture after lost video** holds the last intact frame instead (a brief freeze rather than
+noise). The status bar counts lost packets (*loss*) and held frames (*held*).
 
 ## Snapshots
 

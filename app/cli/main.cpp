@@ -2,7 +2,7 @@
 //
 // Usage: dji-vcam-cli [--ble] [--seconds N] [--identifier-file PATH] [--dump PATH]
 //        dji-vcam-cli --vcam-test N    publish a test pattern to the DJI VCam webcam for N seconds
-//        dji-vcam-cli --decode-bench FILE [--decoder auto|gpu|cpu]
+//        dji-vcam-cli --decode-bench FILE [--decoder auto|gpu|cpu] [--frames-out FILE.nv12]
 //                                      time each per-frame step of the live view on a recorded stream
 //   --ble              wake the camera's Wi-Fi over Bluetooth first and keep the BLE link alive
 //   --identifier-file  file holding the approved pairing identifier (never printed)
@@ -13,6 +13,8 @@
 //   --camera           follow the camera's settings and status (subscriptions) and print them
 //   --camera-set N=C   once streaming, change setting N (e.g. Stabilization, EV) to code C through
 //                      the camera controls, confirming on the camera's read-back; repeatable
+//   --gap-wait MS      wait up to MS for a missing video datagram (re-sent by the camera) before
+//                      skipping it; 0 (default) acknowledges the newest datagram at once
 //   --camera-ip IP     the camera's address (default 192.168.2.1), e.g. 127.0.0.1 for
 //                      tools/fake_camera.py
 #include <algorithm>
@@ -133,7 +135,8 @@ private:
 
 // Decodes a recorded Annex-B stream as fast as possible and reports what each per-frame step of
 // the live view costs, i.e. how much headroom is left at 30 fps.
-int run_decode_bench(const std::string& path, djivcam::media::DecoderPreference preference) {
+// With `frames_out`, also writes every decoded frame there as raw NV12 (to compare decoders).
+int run_decode_bench(const std::string& path, djivcam::media::DecoderPreference preference, const std::string& frames_out) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         say("cannot open " + path);
@@ -149,6 +152,10 @@ int run_decode_bench(const std::string& path, djivcam::media::DecoderPreference 
     say("decoder: " + decoder.backend() + ", " + std::to_string(units.size()) + " access units");
     djivcam::media::Nv12Canvas canvas(1280, 720);
     StepTimer decode("decode + download (NV12)"), webcam("webcam NV12 canvas");
+    std::ofstream out;
+    if (!frames_out.empty()) {
+        out.open(frames_out, std::ios::binary);
+    }
     int frames = 0;
     for (const auto& unit : units) {
         auto frame = decode.measure([&] { return decoder.decode(unit.data); });
@@ -156,6 +163,9 @@ int run_decode_bench(const std::string& path, djivcam::media::DecoderPreference 
             continue;
         }
         ++frames;
+        if (out) {
+            out.write(reinterpret_cast<const char*>(frame->data.data()), static_cast<std::streamsize>(frame->data.size()));
+        }
         webcam.measure([&] { return canvas.draw(*frame); });
     }
     say(std::to_string(frames) + " frames");
@@ -281,6 +291,7 @@ int main(int argc, char* argv[]) {
     int vcam_test_seconds = 0;
     std::string bench_file;
     std::string decoder_choice = "auto";
+    std::string frames_out;
     std::string identifier_file;
     std::string dump_path;
     std::vector<SendSpec> sends;
@@ -288,6 +299,7 @@ int main(int argc, char* argv[]) {
     bool follow_camera = false;
     std::vector<std::pair<djivcam::camera::Setting, int>> camera_sets;
     std::string camera_ip;
+    int gap_wait_ms = 0;
     for (int i = 1; i < argc; ++i) {
         const std::string flag = argv[i];
         const bool has_value = i + 1 < argc;
@@ -299,6 +311,8 @@ int main(int argc, char* argv[]) {
             bench_file = argv[++i];
         } else if (flag == "--decoder" && has_value) {
             decoder_choice = argv[++i];
+        } else if (flag == "--frames-out" && has_value) {
+            frames_out = argv[++i];
         } else if (flag == "--seconds" && has_value) {
             seconds = std::stoi(argv[++i]);
         } else if (flag == "--identifier-file" && has_value) {
@@ -324,6 +338,8 @@ int main(int argc, char* argv[]) {
             }
             camera_sets.push_back(*change);
             follow_camera = true;
+        } else if (flag == "--gap-wait" && has_value) {
+            gap_wait_ms = std::stoi(argv[++i]);
         } else if (flag == "--camera-ip" && has_value) {
             camera_ip = argv[++i];
         } else {
@@ -346,7 +362,8 @@ int main(int argc, char* argv[]) {
         using djivcam::media::DecoderPreference;
         return run_decode_bench(bench_file, decoder_choice == "gpu"   ? DecoderPreference::Hardware
                                             : decoder_choice == "cpu" ? DecoderPreference::Software
-                                                                      : DecoderPreference::Auto);
+                                                                      : DecoderPreference::Auto,
+                                frames_out);
 #else
         std::fprintf(stderr, "built without the video decoder\n");
         return 2;
@@ -354,6 +371,7 @@ int main(int argc, char* argv[]) {
     }
 
     djivcam::SessionConfig config;
+    config.gap_timeout = std::chrono::milliseconds(gap_wait_ms);
     if (!camera_ip.empty()) {
         config.camera_ip = camera_ip;
         config.camera_subnet_prefix = camera_ip.substr(0, camera_ip.rfind('.') + 1);

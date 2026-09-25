@@ -28,11 +28,14 @@ class VideoReassembler {
 public:
     using Clock = std::chrono::steady_clock;
     using Deliver = std::function<void(std::span<const std::uint8_t>)>;
+    // Called with the number of datagrams given up on, before the data after the gap is delivered
+    // (the camera never re-sends them: what follows is damaged until the next keyframe).
+    using OnSkip = std::function<void(std::uint64_t skipped)>;
 
     static constexpr std::uint16_t kSeqStep = 8;        // the camera advances its seq by 8
     static constexpr std::uint16_t kMaxWindow = 1024;   // farther jumps are stream restarts
 
-    VideoReassembler(Deliver deliver, std::chrono::milliseconds gap_timeout);
+    VideoReassembler(Deliver deliver, std::chrono::milliseconds gap_timeout, OnSkip on_skip = {});
 
     void push(std::uint16_t seq, std::span<const std::uint8_t> payload, Clock::time_point now);
     // Gives up on gaps older than gap_timeout.
@@ -50,6 +53,7 @@ private:
 
     Deliver deliver_;
     std::chrono::milliseconds gap_timeout_;
+    OnSkip on_skip_;
     std::optional<std::uint16_t> expected_;
     // Datagrams received ahead of a gap, keyed by sequence number.
     std::map<std::uint16_t, std::vector<std::uint8_t>> held_;

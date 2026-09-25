@@ -4,8 +4,8 @@
 
 namespace djivcam {
 
-VideoReassembler::VideoReassembler(Deliver deliver, std::chrono::milliseconds gap_timeout)
-    : deliver_(std::move(deliver)), gap_timeout_(gap_timeout) {}
+VideoReassembler::VideoReassembler(Deliver deliver, std::chrono::milliseconds gap_timeout, OnSkip on_skip)
+    : deliver_(std::move(deliver)), gap_timeout_(gap_timeout), on_skip_(std::move(on_skip)) {}
 
 void VideoReassembler::reset() {
     expected_.reset();
@@ -66,6 +66,9 @@ void VideoReassembler::poll(Clock::time_point now) {
         nearest = std::min(nearest, static_cast<std::uint16_t>(seq - *expected_));
     }
     stats_.skipped += nearest / kSeqStep;
+    if (on_skip_) {
+        on_skip_(nearest / kSeqStep);
+    }
     expected_ = static_cast<std::uint16_t>(*expected_ + nearest);
     drain(now);
 }

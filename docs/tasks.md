@@ -3,26 +3,19 @@
 Living list, updated as work progresses. Status: `[ ]` to do, `[~]` in progress, `[x]` done.
 Milestones refer to [app-architecture.md](app-architecture.md).
 
-## Test plan for the next session with the camera
+## Test plan with the camera (started 2026-09-25)
 
-Everything below was built or changed without the camera; run it in this order.
-
-1. **Media source update** (one UAC prompt): install the new `djivcam-source.dll` (lock fix,
-   heartbeat, BT.709 media type), e.g. run the new installer, or
-   `app/scripts/update-vcam-source.ps1 -SourceDll <build>\gui\RelWithDebInfo\djivcam-source.dll`
-   from an administrator PowerShell.
-2. **Installer**: install `binaries/dji-vcam-setup-0.1.0.exe`, start from the Start menu, check
-   the webcam works without the app's own install prompt, uninstall, check that DJI VCam is gone
-   from the camera list and `C:\ProgramData\DJI VCam` is removed.
-3. **Live view on main**: connect, watch *delay* / *loss* / *dup* in the status bar; if the lag
-   comes back, compare with `video/gapWaitMs` = 50.
-4. **Camera controls** (docs/camera-controls.md section 6, experiments 1-3):
-   `dji-vcam-cli --ble --identifier-file .state/ble_identifier --seconds 60 --camera --show-messages`,
-   change settings on the camera's touchscreen and watch the decoded state follow; then
-   `--camera-set Stabilization=3 --camera-set EV=18 ...` and the app's Camera settings panel.
-5. **Native Bluetooth** (`git switch ble-native`, rebuild): connect with one click as before
-   (pair, wake, credentials); Disconnect during "Searching" returns at once. Merge if it works.
-6. **Webcam consumers**: OBS (Video Capture Device), a browser (webrtc test page), Windows Camera.
+1. [x] Media source update (lock fix, heartbeat, BT.709 type) installed. A stale Windows build
+       (MSBuild ignores header changes under AppData) crashed it first: the work folder moved to
+       `%USERPROFILE%\.dji-vcam`.
+2. [ ] Installer: install, start from the Start menu, uninstall (needs administrator prompts)
+3. [x] Live view on main: webcam carries the live camera; loss and noise investigated (camera never
+       re-sends, no keyframe request, bridge firmware 0.4.0 cut the loss); freeze-after-loss option
+4. [~] Camera controls: status topics decode correctly on the camera; still to do: confirm the values
+       against the camera screen (EV byte), setter round-trips from the panel
+5. [ ] Native Bluetooth branch (`ble-native`): one-click connect, then merge
+6. [ ] Webcam consumers: OBS (set "Use buffering" off), a browser, Windows Camera
+7. [ ] Camera power cycle while connected: the app should find, wake and stream again by itself
 
 ## Now
 
@@ -63,7 +56,9 @@ Everything below was built or changed without the camera; run it in this order.
 ## Later
 
 - [ ] Linux: v4l2loopback virtual camera, BlueZ, NetworkManager link; test on a real Linux machine
-- [ ] Wi-Fi adapter link: detect a second adapter, join the camera AP on it, keep internet routing
+- [ ] Wi-Fi adapter link: detect a second adapter, join the camera AP on it, keep internet routing;
+      a 5 GHz USB dongle is the way to 5 GHz (the ESP32-C5 has no usable USB device mode in ESP-IDF,
+      so it cannot replace the S3 as a USB network adapter)
 - [ ] 1080p30: try the camera's RTMP mode (proven 1080p) received by the app; first the cheap
       live-view experiments 4 and 8 of camera-controls.md (09/A8 enable, stream-quality parameter)
 - [ ] Loss and re-sends: A/B test with the camera on a lossy link, the default (ACK the newest

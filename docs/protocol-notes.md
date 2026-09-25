@@ -327,6 +327,24 @@ Combine the A5P-verified transport (osmosis) with the Pocket 3 video trigger (Po
 
 ---
 
+### 3.10 Lost video on the Action 5 Pro [VERIFIED 2026-09-25, our own tests]
+
+- **The camera never re-sends video.** With the app dropping every 50th video datagram on purpose
+  and holding the ACK at each gap for 150 ms: 72 dropped, 0 re-sent, 0 duplicates. Holding the ACK
+  only throttles the camera (video rate down ~15%, one second at 2.2 Mbit/s). Acknowledge the newest
+  datagram at once.
+- **No keyframe on request.** `09/A8 00 04 02 00...` (Mimo's live-view enable / IDR request on the
+  A6 and Nano) answers `ee` from `0x41` and `e0` (not supported) from `0x08` and `0x48`;
+  `02/B3` (`dji_camera_get_app_request_i_frame`) answers `e0` with an empty payload and with `01`.
+  Keyframes stay at a fixed 30-frame (1 s) cadence, so a lost datagram damages the picture until the
+  next one. The app can hold the last intact frame meanwhile (Options, off by default: real time
+  first).
+- **Video sub-header** (12 bytes before the H.264 bytes): `[u16 window][u16 seq][u32 0][u8 frame
+  counter][u8: bit 7 = odd fragment, bits 0-6 = fragments in the frame][u8: fragment pair index in
+  the low bits][u8 flags]`. Keyframes are 18-24 fragments, P-frames 2-13 (at ~3.8 Mbit/s).
+- Loss seen with the ESP32-S3 bridge happened on the radio side (bridge and Windows counters clean);
+  larger Wi-Fi RX buffering in the bridge (firmware 0.4.0) cut it by about two thirds.
+
 ## 4. Verified A5P video alternative: RTMP push over BLE (Moblin)
 
 [V-A5P per Moblin code comments: "Patch for OA5P …" (`DjiDevice.swift:415-425`); model-specific configure byte `0x1A` for A5P/360 (`:340-349`); `hasNewProtocol()` = true for A5P (`SettingsDjiDevice.swift:80-101`)]

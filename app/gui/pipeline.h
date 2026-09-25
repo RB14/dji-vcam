@@ -31,6 +31,7 @@ struct LiveStats {
     double fps = 0;           // decoded frames
     double kbps = 0;          // H.264 stream
     double delay_ms = 0;      // worst time a frame spent inside the app (queue + decode + hand-over)
+    double held = 0;          // frames not shown because video before them was lost
     double loss_percent = 0;  // video datagrams never received (live only)
     quint64 recovered = 0;    // gaps filled by late or re-sent datagrams
     quint64 duplicates = 0;   // datagrams received twice (the camera re-sending)
@@ -57,6 +58,9 @@ public:
     Frame takeLatestFrame();
     // Decoded frames are also published to this virtual camera (may be null). Set while stopped.
     void setVirtualCamera(djivcam::vcam::VirtualCamera* camera) { virtual_camera_ = camera; }
+    // After lost video, keep showing the last intact frame until the next keyframe instead of the
+    // damaged frames in between (the camera never re-sends lost video).
+    void setHoldOnLoss(bool hold) { hold_on_loss_ = hold; }
 
     // The camera's settings while connected live (null otherwise, e.g. during a replay).
     djivcam::camera::CameraController* camera() const { return camera_.get(); }
@@ -83,6 +87,7 @@ private:
     struct QueuedUnit {
         djivcam::h264::AccessUnit unit;
         Clock::time_point arrived;
+        bool damaged = false;  // decoded but not shown: video before it was lost (or it is itself damaged)
     };
 
     void start_decoder(djivcam::media::DecoderPreference decoder);
@@ -104,6 +109,11 @@ private:
     std::atomic<std::uint64_t> decoded_frames_{0};
     std::atomic<std::uint64_t> stream_bytes_{0};
     std::atomic<std::int64_t> worst_delay_us_{0};  // since the last report
+    std::atomic<bool> hold_on_loss_{false};
+    std::atomic<bool> gap_pending_{false};   // lost video: the access unit being assembled is damaged
+    std::atomic<bool> holding_{true};        // until the next intact keyframe (also after (re)connecting)
+    std::atomic<std::uint64_t> held_frames_{0};
+    std::uint64_t last_held_ = 0;
     std::mutex frame_mutex_;
     Frame latest_frame_;
     bool frame_notified_ = false;

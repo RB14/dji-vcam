@@ -752,6 +752,16 @@ R-SDK (`0xAA`, BLE fff5). The builder was checked against the official example f
 
 ---
 
+## 5b. Results on the Action 5 Pro (2026-09-25)
+
+- **Status topics work as documented**: subscribing to the topics of section 2.3 over the datalink
+  (receiver `0x28`) returned the camera's mode, format (resolution/fps), codec, stabilization, FOV,
+  exposure mode, ISO setting, EV, auto-ISO limit, anti-flicker, white balance, colour profile,
+  texture, noise reduction, battery and storage, decoded with the layouts above. Whether EV is `@6`
+  or `@15` still needs a check against the camera screen (experiment 6).
+- **No keyframe request** (`09/A8` to `0x41`/`0x08`/`0x48`, `02/B3`): see protocol-notes.md 3.10.
+- Setters from the app's panel: pending a round-trip test on the camera (experiment 3).
+
 ## 6. Open questions / experiments to run with the camera on
 
 Run them in this order. Each one is read-only or reversible unless marked otherwise.

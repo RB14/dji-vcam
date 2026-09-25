@@ -42,10 +42,10 @@ struct SessionConfig {
     // Session alive but no video for this long (e.g. the camera still streams to a previous,
     // abandoned session): reconnect with a fresh handshake.
     std::chrono::milliseconds video_timeout{3000};
-    // How long to wait for a missing video datagram (re-sent by the camera) before skipping it.
-    // While waiting, the video ACK stays at the gap, which holds back the camera's send window.
-    // 0 acknowledges the newest datagram right away, as the Python tools do (measured ~135 ms
-    // glass to glass); no live run has seen a gap filled within 50 ms yet.
+    // How long to wait for a missing video datagram before skipping it. Keep 0 (acknowledge the
+    // newest datagram at once): the Action 5 Pro never re-sends lost video, and holding the ACK at
+    // a gap throttles its sending (tested 2026-09-25: 72 dropped datagrams, 0 re-sent, video rate
+    // down ~15% with 150 ms). Only for experiments (dji-vcam-cli --gap-wait).
     std::chrono::milliseconds gap_timeout{0};
 };
 
@@ -68,6 +68,9 @@ public:
     // Called on the session thread with every DUML message from the camera that does not answer a
     // request(): status pushes, and the camera's own requests (already answered by the session).
     using MessageCallback = std::function<void(const duml::Frame&)>;
+    // Called on the session thread when video datagrams were lost for good, before the video after
+    // the gap is handed over: that video is damaged until the next keyframe.
+    using GapCallback = std::function<void()>;
     using ReplyCallback = RequestTracker::ReplyCallback;
 
     LiveViewSession(SessionConfig config, VideoCallback on_video, StateCallback on_state);
@@ -77,6 +80,7 @@ public:
 
     // Set before start().
     void set_message_callback(MessageCallback callback) { on_message_ = std::move(callback); }
+    void set_gap_callback(GapCallback callback) { on_gap_ = std::move(callback); }
 
     void start();
     void stop();
@@ -110,6 +114,7 @@ private:
     VideoCallback on_video_;
     StateCallback on_state_;
     MessageCallback on_message_;
+    GapCallback on_gap_;
     std::mutex outgoing_mutex_;
     std::vector<Outgoing> outgoing_;
     std::atomic<SessionState> state_{SessionState::Stopped};

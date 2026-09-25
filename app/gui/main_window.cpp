@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDockWidget>
+#include <QScreen>
 #include <QScrollArea>
 #include <QLabel>
 #include <QMenu>
@@ -47,8 +48,7 @@ const QString kBridgeKey = QStringLiteral("connect/configureBridge");
 const QString kStartupKey = QStringLiteral("connect/onStartup");
 const QString kDecoderKey = QStringLiteral("video/decoder");
 const QString kVirtualCameraKey = QStringLiteral("vcam/enabled");
-// Advanced, no UI: how long to wait for a missing video datagram before skipping it (ms, 0 = never).
-const QString kGapWaitKey = QStringLiteral("video/gapWaitMs");
+const QString kHoldOnLossKey = QStringLiteral("video/holdOnLoss");
 // Advanced, no UI: the camera's address (its own access point: 192.168.2.1; 127.0.0.1 for
 // tools/fake_camera.py).
 const QString kCameraIpKey = QStringLiteral("connect/cameraIp");
@@ -75,7 +75,7 @@ MainWindow::MainWindow(QWidget* parent)
       connect_action_(new QAction(tr("Connect"), this)),
       decoder_choice_(new QComboBox(this)),
       camera_label_(new QLabel(this)),
-      state_label_(new QLabel(tr("Not connected"), this)),
+      state_label_(new QLabel(tr("Not connected: click Connect"), this)),
       format_label_(new QLabel(this)),
       stats_label_(new QLabel(this)),
       decoder_label_(new QLabel(this)) {
@@ -83,7 +83,9 @@ MainWindow::MainWindow(QWidget* parent)
     vcam_label_ = new QLabel(this);
     setWindowTitle(tr("DJI VCam - DJI Osmo Action live view"));
     setCentralWidget(preview_);
-    resize(1560, 820);
+    // Room for the preview and the camera settings, but never larger than the screen.
+    const QRect available = screen()->availableGeometry();
+    resize(std::min(1560, available.width() * 9 / 10), std::min(820, available.height() * 9 / 10));
 
     auto* camera_dock = new QDockWidget(tr("Camera settings"), this);
     camera_dock->setObjectName(QStringLiteral("cameraSettings"));
@@ -106,6 +108,10 @@ MainWindow::MainWindow(QWidget* parent)
     bluetooth_action_ = add_toggle(options, tr("Wake the camera over Bluetooth"), settings_, kBluetoothKey, true);
     bridge_action_ = add_toggle(options, tr("Configure the ESP32 USB bridge automatically"), settings_, kBridgeKey, true);
     startup_action_ = add_toggle(options, tr("Connect on startup"), settings_, kStartupKey, false);
+    QAction* hold_action = add_toggle(options, tr("Freeze the picture after lost video (instead of showing damaged frames)"),
+                                      settings_, kHoldOnLossKey, false);  // real time first
+    pipeline_->setHoldOnLoss(hold_action->isChecked());
+    connect(hold_action, &QAction::toggled, this, [this](bool on) { pipeline_->setHoldOnLoss(on); });
     options->addSeparator();
     connect(options->addAction(tr("Forget the paired camera")), &QAction::triggered, this, &MainWindow::forgetCamera);
     auto* options_button = new QToolButton(this);
@@ -185,6 +191,7 @@ MainWindow::MainWindow(QWidget* parent)
     vcam_action_->setToolTip(tr("The virtual camera is not available on this platform yet"));
 #endif
     updateVirtualCameraStatus();
+    preview_->setMessage(state_label_->text());
 
     if (startup_action_->isChecked()) {
         QTimer::singleShot(0, this, &MainWindow::connectCamera);
@@ -307,7 +314,7 @@ void MainWindow::toggleConnection(bool connect) {
         pipeline_->stop();
         preview_->clear();
         streaming_ = false;
-        showStage(tr("Not connected"));
+        showStage(tr("Not connected: click Connect"));
         format_label_->clear();
         stats_label_->clear();
         decoder_label_->clear();
@@ -323,7 +330,6 @@ void MainWindow::toggleConnection(bool connect) {
     djivcam::SessionConfig config;
     config.identifier = pairingIdentifier().toStdString();
     config.token = kPairingToken.toStdString();
-    config.gap_timeout = std::chrono::milliseconds(settings_->value(kGapWaitKey, 0).toInt());
     const QString camera_ip = settings_->value(kCameraIpKey, QString::fromStdString(config.camera_ip)).toString();
     config.camera_ip = camera_ip.toStdString();
     config.camera_subnet_prefix = camera_ip.left(camera_ip.lastIndexOf(QLatin1Char('.')) + 1).toStdString();
@@ -342,6 +348,7 @@ void MainWindow::toggleConnection(bool connect) {
 
 void MainWindow::showStage(const QString& text, bool attention) {
     state_label_->setText(text);
+    preview_->setMessage(text, attention);  // large, in the middle, until video arrives
     state_label_->setStyleSheet(attention ? QStringLiteral("color: #d97706; font-weight: bold;") : QString());
     if (attention) {
         QApplication::alert(this);
@@ -357,15 +364,20 @@ void MainWindow::onConnectorStage(Stage stage, const QString& detail) {
 }
 
 void MainWindow::onWifiReady(const QString& ssid, const QString& password) {
-    network_missing_.invalidate();
+    // From now on the camera's network should appear: if it does not within kRewakeAfterMs, the
+    // camera is woken again (checked in onStats()).
+    network_missing_.start();
     if (!bridge_action_->isChecked()) {
+        showStage(tr("Waiting for the camera's Wi-Fi (%1)").arg(ssid));
         return;
     }
     showStage(tr("Configuring the ESP32 bridge"));
     QString error;
     if (!BridgeLink::ensureCredentials(ssid, password, &error)) {
         showStage(tr("%1: join the camera's Wi-Fi another way").arg(error), true);
+        return;
     }
+    showStage(tr("Waiting for the camera's Wi-Fi (the bridge is joining %1)").arg(ssid));
 }
 
 void MainWindow::onSessionState(const QString& state, const QString& detail) {
@@ -396,12 +408,12 @@ void MainWindow::onStats(const LiveStats& stats) {
     }
     // "delay" is the app's own share of the latency; seconds of lag with a small delay here come
     // from the camera or the radio link.
-    stats_label_->setText(tr("%1 fps  |  %2 kbit/s  |  delay %3 ms  |  loss %4%  |  %5 recovered  |  %6 dup  |  %7 reconnects")
+    stats_label_->setText(tr("%1 fps  |  %2 kbit/s  |  delay %3 ms  |  loss %4%  |  %5 held  |  %6 dup  |  %7 reconnects")
                               .arg(stats.fps, 0, 'f', 0)
                               .arg(stats.kbps, 0, 'f', 0)
                               .arg(stats.delay_ms, 0, 'f', 0)
                               .arg(stats.loss_percent, 0, 'f', 2)
-                              .arg(stats.recovered)
+                              .arg(stats.held, 0, 'f', 0)
                               .arg(stats.duplicates)
                               .arg(stats.reconnects));
 }

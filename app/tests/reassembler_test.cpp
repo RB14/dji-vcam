@@ -2,6 +2,9 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+#include <vector>
+
 namespace djivcam {
 namespace {
 
@@ -70,6 +73,19 @@ TEST_F(ReassemblerTest, FarJumpIsAStreamRestart) {
     EXPECT_EQ(delivered.size(), 2U);
     EXPECT_EQ(reassembler.stats().restarts, 1U);
     EXPECT_EQ(reassembler.ack_seq(), 0x8008);
+}
+
+TEST(VideoReassemblerSkip, ReportsAGapBeforeDeliveringWhatFollowsIt) {
+    std::vector<std::string> events;
+    VideoReassembler reassembler(
+        [&](std::span<const std::uint8_t> p) { events.push_back("deliver " + std::to_string(p[0])); }, 0ms,
+        [&](std::uint64_t skipped) { events.push_back("skip " + std::to_string(skipped)); });
+    const auto t0 = VideoReassembler::Clock::now();
+    const std::uint8_t one = 1, three = 3;
+    reassembler.push(8, std::span(&one, 1), t0);
+    reassembler.push(24, std::span(&three, 1), t0);  // 16 lost
+    reassembler.poll(t0);
+    EXPECT_EQ(events, (std::vector<std::string>{"deliver 1", "skip 1", "deliver 3"}));
 }
 
 }  // namespace

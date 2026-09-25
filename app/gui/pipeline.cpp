@@ -41,6 +41,7 @@ void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPrefe
     auto on_state = [this](djivcam::SessionState state, const std::string& detail) {
         if (state != djivcam::SessionState::Streaming) {
             assembler_->reset();
+            holding_ = true;  // the stream restarts mid-GOP: wait for a keyframe
         } else if (camera_) {
             camera_->on_streaming();  // (re)subscribe to the camera's settings
         }
@@ -57,6 +58,7 @@ void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPrefe
         },
         [this](const std::string& error) { emit cameraError(QString::fromStdString(error)); });
     session_->set_message_callback([this](const djivcam::duml::Frame& frame) { camera_->on_message(frame); });
+    session_->set_gap_callback([this] { gap_pending_ = true; });
     session_->start();
 }
 
@@ -86,6 +88,10 @@ void Pipeline::start_decoder(djivcam::media::DecoderPreference decoder) {
         [this](djivcam::h264::AccessUnit&& unit) { enqueue(std::move(unit)); });
     decoder_ = std::jthread([this, decoder](std::stop_token stop) { decode_loop(stop, decoder); });
     decoded_frames_ = 0;
+    held_frames_ = 0;
+    last_held_ = 0;
+    gap_pending_ = false;
+    holding_ = true;
     stream_bytes_ = 0;
     worst_delay_us_ = 0;
     width_ = height_ = 0;
@@ -123,12 +129,21 @@ void Pipeline::stop() {
 
 void Pipeline::enqueue(djivcam::h264::AccessUnit&& unit) {
     stream_bytes_ += unit.data.size();
+    // A unit completed after lost video contains the gap (a lost start of this unit merges it into
+    // the previous one): it and everything after it is damaged until an intact keyframe.
+    if (gap_pending_.exchange(false)) {
+        holding_ = true;
+    } else if (holding_ && unit.keyframe) {
+        holding_ = false;
+    }
+    const bool damaged = holding_;
     {
         std::lock_guard lock(mutex_);
         if (queue_.size() >= kMaxQueuedUnits) {
             queue_.clear();  // hopelessly behind: resync on the next keyframe
+            holding_ = true;
         }
-        queue_.push_back({std::move(unit), Clock::now()});
+        queue_.push_back({std::move(unit), Clock::now(), damaged});
     }
     wake_.notify_one();
 }
@@ -160,6 +175,7 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
         return;
     }
     emit decoderChanged(QString::fromStdString(decoder->backend()), decoder->hardware());
+    Frame last_intact;  // shown while damaged frames are held back
 #ifdef DJIVCAM_HAVE_VCAM
     std::optional<djivcam::media::Nv12Canvas> canvas;  // virtual camera frames, created on first use
 #endif
@@ -177,6 +193,13 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
         if (auto decoded = decoder->decode(queued.unit.data)) {
             const Frame frame = std::make_shared<const djivcam::media::Nv12Frame>(std::move(*decoded));
             ++decoded_frames_;
+            // Damaged frames are decoded (the decoder needs them) but the last intact one stays up.
+            const bool show = !(queued.damaged && hold_on_loss_);
+            if (!show) {
+                ++held_frames_;
+            } else {
+                last_intact = frame;
+            }
             if (frame->width != width_ || frame->height != height_) {
                 width_ = frame->width;
                 height_ = frame->height;
@@ -187,9 +210,14 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
                 if (!canvas) {
                     canvas.emplace(djivcam::vcam::kWidth, djivcam::vcam::kHeight);
                 }
-                virtual_camera_->publish(canvas->draw(*frame));
+                if (last_intact) {
+                    virtual_camera_->publish(canvas->draw(*last_intact));  // repeated while holding
+                }
             }
 #endif
+            if (!show) {
+                continue;
+            }
             bool notify = false;
             {
                 std::lock_guard lock(frame_mutex_);
@@ -219,6 +247,9 @@ Pipeline::Frame Pipeline::takeLatestFrame() {
 void Pipeline::report_stats() {
     LiveStats out;
     const std::uint64_t frames = decoded_frames_;
+    const std::uint64_t held = held_frames_;
+    out.held = static_cast<double>(held - last_held_);
+    last_held_ = held;
     const std::uint64_t bytes = stream_bytes_;
     out.fps = static_cast<double>(frames - last_frames_);
     out.kbps = static_cast<double>(bytes - last_stream_bytes_) * 8.0 / 1000.0;

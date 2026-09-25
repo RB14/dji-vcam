@@ -69,6 +69,14 @@ void PreviewWidget::clear() {
     update();
 }
 
+void PreviewWidget::setMessage(const QString& message, bool attention) {
+    message_ = message;
+    attention_ = attention;
+    if (!frame_) {
+        update();
+    }
+}
+
 void PreviewWidget::initializeGL() {
     initializeOpenGLFunctions();
     luminance_textures_ = context()->format().majorVersion() < 3;
@@ -142,9 +150,17 @@ void PreviewWidget::paintGL() {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     if (!frame_ || frame_->width < 2 || frame_->height < 2) {
+        // The viewport may still be the previous frame's letterbox: text belongs to the whole widget.
+        const qreal ratio = devicePixelRatioF();
+        glViewport(0, 0, qRound(width() * ratio), qRound(height() * ratio));
         QPainter painter(this);
-        painter.setPen(Qt::gray);
-        painter.drawText(rect(), Qt::AlignCenter, tr("No video"));
+        QFont font = painter.font();
+        font.setPointSizeF(font.pointSizeF() * 1.6);
+        font.setBold(attention_);
+        painter.setFont(font);
+        painter.setPen(attention_ ? QColor(0xf5, 0x9e, 0x0b) : QColor(0xb0, 0xb0, 0xb0));
+        const QRect area = rect().adjusted(width() / 10, 0, -width() / 10, 0);
+        painter.drawText(area, Qt::AlignCenter | Qt::TextWordWrap, message_.isEmpty() ? tr("No video") : message_);
         return;
     }
     if (!uploaded_) {
