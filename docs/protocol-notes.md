@@ -345,6 +345,66 @@ Combine the A5P-verified transport (osmosis) with the Pocket 3 video trigger (Po
 - Loss seen with the ESP32-S3 bridge happened on the radio side (bridge and Windows counters clean);
   larger Wi-Fi RX buffering in the bridge (firmware 0.4.0) cut it by about two thirds.
 
+### 3.11 No video after a short power-off [SOLVED 2026-09-25: hang up Bluetooth after the wake]
+
+Switch the camera off while the app streams and on again within about a minute, and the camera
+often (not always: 3 of 4 runs were fine at one point) sent no video to any new connection, for
+minutes. Off for more than a minute (a cold start) always cleared it; so did replugging the bridge.
+Cause and fix: the last paragraphs of this section (DJI Mimo hangs up Bluetooth; the app now does).
+
+What the stuck camera does:
+
+- Everything but video: handshake, status and DUML traffic, ~95 datagrams/s of type `0x01`
+  (~72/s of them 34-byte window-status frames), answers to our requests, its own `00/81` requests.
+- Its **video cursor** (`[10:12]` of the status frames) never moves: it does not start the video
+  channel. A packet capture on the PC (pktmon) shows no type `0x02` datagram to any port, and the
+  bridge drops nothing, so it is not lost on the way.
+- The camera's status pushes (`cam_status`, `cam_video_param_v2`, `02/80`...) are identical to a
+  healthy camera's; it does not say why.
+
+Ruled out (each tried in the stuck state or across a power cycle, no video):
+
+- Reconnecting the datalink at any interval (1-30 s of silence) or after 20 s of quiet; fresh
+  handshake session ids and bases (always used); random `00/88` registration bytes.
+- Restarting the app while its Bluetooth link was reconnected at once; releasing Bluetooth for 90 s
+  while the datalink kept retrying (the link really drops: the camera advertises again 3.3 s later).
+- Bridge side: restarting the ESP32 Wi-Fi driver, a clean rejoin (`rejoin`), `forget` then joining
+  after a Bluetooth wake (1 of 2 worked), a soft reboot, a reset without deauthentication (`vanish`).
+- Joining the camera's Wi-Fi only after the Bluetooth wake (DJI Mimo's order).
+- `02/09` liveview_subscribe (answers `e3`, bad parameters), `00/82` `01`/`00`, `00/0E`, `02/0A`
+  (`e0`), TCP 6001 (refused on the A5P; Mimo only tries it as one of its link types).
+- `07/15` wifi_restart: answers `00` on a healthy camera and restarts its Wi-Fi (the bridge sees
+  `AUTH_LEAVE`); on a stuck camera it gets no reply, drops the Bluetooth link and does not help.
+- `00/0B` reboot_device to `0x01`: no reply, no reboot.
+
+What did bring video back, besides a cold start or a replug:
+
+- Ending the app's Bluetooth session and starting new ones: the video came on the second or third
+  new session, 40 s to 3 min after the power-on (the CLI after closing the app; the app renewing its
+  session each time a connection got no video).
+- The pairing token matters: the TCP 7001 poke must carry the token the Bluetooth link paired with;
+  with a different one a healthy camera sends no video either (tested with random Bluetooth tokens).
+
+DJI Mimo recovers every time. Its Bluetooth sequence per connection (btsnoop, Mimo 2.12.1): `00/2B`
+`04 00` → `0xF0`; `07/45` pairing check with **a new 4-digit token each time**; `00/32`
+activate_device `"11" 00 00 00` → `0x88`; `02/8E` GET parameter `0x1C` → `0x08`; `07/39`
+get_wifi_mode `ee` (answers `e0`); `00/2B` `01 01` about every second; then `07/07` `19`, `07/0E`
+`d1`, `07/0C` (SSID, password, AP MAC). It never sends `53/10` and **never answers the camera's own
+requests** (`00/81`, `00/88`, `00/74`), which the camera keeps sending; the link stays up. Mimo's
+datalink traffic is not captured (PCAPdroid breaks its UDP link).
+
+**Mimo hangs up Bluetooth once it has the Wi-Fi credentials** (HCI Disconnection Complete, reason
+`0x16` "terminated by local host", ~1 s after its `07/0C`, in both captured sessions): its live view
+runs with no Bluetooth link at all. The app kept the link open (keepalive every second) for as long
+as it streamed, so the camera was switched off in the middle of an app session, and after a short
+power-off it resumed that session with a live view that sends nothing. The videos that did come back
+came right after our Bluetooth session had ended (app closed; between renewals). The app now does
+as Mimo: connect, pair, wake, fetch the credentials, disconnect; it connects again only to wake the
+camera when its network has been gone for 10 s. It also leaves the camera's Bluetooth requests
+unanswered, as Mimo does. Verified 2026-09-25: five short power cycles in a row (including one 11 s
+after the video had come back, the case that used to fail) each got video on the first connection,
+~15 s after the camera was on. (`dji-vcam-cli --ble --ble-hold` keeps the link open, to reproduce.)
+
 ## 4. Verified A5P video alternative: RTMP push over BLE (Moblin)
 
 [V-A5P per Moblin code comments: "Patch for OA5P …" (`DjiDevice.swift:415-425`); model-specific configure byte `0x1A` for A5P/360 (`:340-349`); `hasNewProtocol()` = true for A5P (`SettingsDjiDevice.swift:80-101`)]

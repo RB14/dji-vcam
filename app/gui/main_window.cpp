@@ -54,7 +54,7 @@ const QString kHoldOnLossKey = QStringLiteral("video/holdOnLoss");
 // tools/fake_camera.py).
 const QString kCameraIpKey = QStringLiteral("connect/cameraIp");
 const QString kPairingToken = QStringLiteral("obsd");  // shown on the camera's approval prompt
-constexpr qint64 kRewakeAfterMs = 20000;                // camera network gone this long: wake again
+constexpr qint64 kRewakeAfterMs = 10000;                // camera network gone this long: wake again
 
 QAction* add_toggle(QMenu* menu, const QString& text, QSettings* settings, const QString& key, bool fallback) {
     QAction* action = menu->addAction(text);
@@ -389,6 +389,9 @@ void MainWindow::onConnectorStage(Stage stage, const QString& detail) {
 }
 
 void MainWindow::onWifiReady(const QString& ssid, const QString& password) {
+    if (streaming_) {
+        return;  // a Bluetooth reconnect while video flows: the network and the bridge are fine
+    }
     // From now on the camera's network should appear: if it does not within kRewakeAfterMs, the
     // camera is woken again (checked in onStats()).
     network_missing_.start();

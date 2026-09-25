@@ -26,6 +26,8 @@ inline constexpr const char* kCameraIp = "192.168.2.1";
 inline constexpr std::uint16_t kDatalinkPort = 9004;
 inline constexpr std::uint16_t kPokePort = 7001;
 inline constexpr std::size_t kHeaderLen = 8;
+// The camera's window-status datagram (type 0x01): video cursor at [10:12], download at [18:20].
+inline constexpr std::size_t kStatusFrameLen = 34;
 
 enum class PacketType : std::uint8_t {
     Handshake = 0x00,
@@ -83,6 +85,8 @@ public:
     std::uint16_t session_id() const { return session_id_; }
     std::uint16_t base() const { return base_; }
     std::uint16_t camera_channel() const { return camera_channel_; }
+    // The camera's video send position from its latest 34-byte status frame.
+    std::uint16_t video_cursor() const { return video_cursor_; }
 
 private:
     void send(PacketType type, std::span<const std::uint8_t> payload, std::optional<std::uint16_t> seq = {});

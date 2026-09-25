@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 
+#include "djivcam/duml.h"
+
 namespace djivcam::ble {
 
 inline constexpr std::uint16_t kDjiCompanyId = 0x08AA;
@@ -60,6 +62,13 @@ public:
     std::optional<WifiCredentials> wake_wifi();
     // Keeps the link alive; the camera drops idle BLE links after a few seconds.
     void keepalive();
+    // Whether to answer the camera's own requests (0x00/0x81 device info, 0x00/0x88, 0x00/0x74...).
+    // DJI Mimo answers none of them over Bluetooth and the camera keeps the link: off by default.
+    // The pairing approval (0x07/0x46) is always processed and answered.
+    void set_answer_requests(bool answer);
+    // Sends a DUML request to `receiver` and waits for its reply (nullopt: none within `timeout`).
+    std::optional<duml::Frame> request(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id,
+                                       duml::Bytes payload, std::chrono::milliseconds timeout);
 
 private:
     struct Impl;

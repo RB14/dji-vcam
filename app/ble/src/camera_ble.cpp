@@ -1,6 +1,7 @@
 #include "djivcam/camera_ble.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <condition_variable>
 #include <cstdio>
@@ -58,6 +59,7 @@ struct CameraBle::Impl {
     std::string scanned_address;  // the camera find_camera() returned
 
     std::mutex mutex;
+    std::atomic<bool> answer_requests{false};  // as DJI Mimo
     std::condition_variable_any changed;
     duml::StreamParser parser;
     std::vector<duml::Frame> responses;  // unclaimed responses from the camera
@@ -112,13 +114,15 @@ struct CameraBle::Impl {
         }
         for (duml::Frame& frame : frames) {
             if (frame.is_request()) {
-                // Every camera request must be answered or the camera drops the link.
-                if (frame.cmd_set == 0x07 && frame.cmd_id == 0x46) {
+                const bool approval = frame.cmd_set == 0x07 && frame.cmd_id == 0x46;
+                if (approval) {
                     std::lock_guard lock(mutex);
                     approved = true;
                 }
-                const bool device_info = frame.cmd_set == 0x00 && frame.cmd_id == 0x81;
-                send(frame.reply(device_info ? app_device_info() : frame.payload));
+                if (approval || answer_requests) {
+                    const bool device_info = frame.cmd_set == 0x00 && frame.cmd_id == 0x81;
+                    send(frame.reply(device_info ? app_device_info() : frame.payload));
+                }
             } else {
                 std::lock_guard lock(mutex);
                 responses.push_back(std::move(frame));
@@ -272,6 +276,13 @@ std::optional<WifiCredentials> CameraBle::wake_wifi() {
         return std::nullopt;
     }
     return WifiCredentials{*ssid, *password};
+}
+
+void CameraBle::set_answer_requests(bool answer) { impl_->answer_requests = answer; }
+
+std::optional<duml::Frame> CameraBle::request(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id,
+                                               duml::Bytes payload, std::chrono::milliseconds timeout) {
+    return impl_->request(receiver, cmd_set, cmd_id, std::move(payload), timeout);
 }
 
 void CameraBle::keepalive() {

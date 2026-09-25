@@ -17,6 +17,7 @@ namespace {
 // Access units are never dropped (every P-frame depends on the previous one); this only guards
 // against unbounded growth if decoding ever stalls.
 constexpr std::size_t kMaxQueuedUnits = 120;
+constexpr int kMessagesToLog = 40;  // camera messages logged per connection before its first video
 constexpr std::chrono::microseconds kReplayFrameInterval{33'333};  // the live view's 30 fps
 
 // Raises `maximum` to `value` if it is larger (lock-free, from any thread).
@@ -39,6 +40,10 @@ void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPrefe
     start_decoder(decoder);
     auto on_video = [this](std::span<const std::uint8_t> bytes) { assembler_->push(bytes); };
     auto on_state = [this](djivcam::SessionState state, const std::string& detail) {
+        video_since_connect_ = state == djivcam::SessionState::Streaming;
+        if (state == djivcam::SessionState::WaitingForRoute) {
+            messages_logged_ = 0;  // a new connection follows
+        }
         if (state != djivcam::SessionState::Streaming) {
             assembler_->reset();
             holding_ = true;  // the stream restarts mid-GOP: wait for a keyframe
@@ -57,8 +62,17 @@ void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPrefe
             }
         },
         [this](const std::string& error) { emit cameraError(QString::fromStdString(error)); });
-    session_->set_message_callback([this](const djivcam::duml::Frame& frame) { camera_->on_message(frame); });
+    session_->set_message_callback([this](const djivcam::duml::Frame& frame) {
+        // Diagnostics: what the camera says before the first video of a connection (its answers to
+        // the live-view start, its state pushes) goes to the log, a limited number per connection.
+        if (!video_since_connect_ && messages_logged_ < kMessagesToLog) {
+            ++messages_logged_;
+            qInfo("camera before video: %s", frame.describe().c_str());
+        }
+        camera_->on_message(frame);
+    });
     session_->set_gap_callback([this] { gap_pending_ = true; });
+    session_->set_log_callback([](const std::string& line) { qInfo("session: %s", line.c_str()); });
     session_->start();
 }
 

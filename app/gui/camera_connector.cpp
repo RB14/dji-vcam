@@ -12,7 +12,6 @@ using Stage = CameraConnector::Stage;
 
 constexpr auto kScanWindow = 20s;
 constexpr auto kApprovalTimeout = 90s;
-constexpr auto kKeepaliveInterval = 1s;
 constexpr auto kRetryDelay = 3s;
 
 // Sleeps in small steps so stop requests are honoured promptly.
@@ -49,7 +48,7 @@ void CameraConnector::stop() {
 
 void CameraConnector::run(std::stop_token stop, QString identifier, QString token, QString address) {
     while (!stop.stop_requested()) {
-        djivcam::ble::CameraBle camera;
+        djivcam::ble::CameraBle camera([](const std::string& message) { qInfo("bluetooth: %s", message.c_str()); });
 
         emit stageChanged(Stage::Searching, tr("Searching for the camera over Bluetooth (make sure it is on)"));
         std::optional<djivcam::ble::Camera> found;
@@ -79,24 +78,26 @@ void CameraConnector::run(std::stop_token stop, QString identifier, QString toke
             continue;
         }
 
-        // Wake the Wi-Fi now, and again whenever asked to while the link is up.
-        wake_requested_ = true;
-        while (!stop.stop_requested() && camera.connected()) {
-            if (wake_requested_.exchange(false)) {
-                emit stageChanged(Stage::WakingWifi, tr("Waking the camera's Wi-Fi"));
-                if (const auto credentials = camera.wake_wifi()) {
-                    emit stageChanged(Stage::WifiReady, tr("Camera Wi-Fi is up"));
-                    emit wifiReady(QString::fromStdString(credentials->ssid),
-                                   QString::fromStdString(credentials->password));
-                } else {
-                    emit stageChanged(Stage::Failed, tr("The camera did not bring up its Wi-Fi, retrying"));
-                    wake_requested_ = true;
-                    sleep_for(stop, kRetryDelay);
-                }
-            }
+        emit stageChanged(Stage::WakingWifi, tr("Waking the camera's Wi-Fi"));
+        std::optional<djivcam::ble::WifiCredentials> credentials;
+        while (!stop.stop_requested() && camera.connected() && !(credentials = camera.wake_wifi())) {
+            emit stageChanged(Stage::Failed, tr("The camera did not bring up its Wi-Fi, retrying"));
             camera.keepalive();
-            sleep_for(stop, kKeepaliveInterval);
+            sleep_for(stop, kRetryDelay);
         }
-        // Bluetooth link lost: reconnect and wake the Wi-Fi again (harmless if it is already up).
+        if (!credentials) {
+            qInfo("bluetooth: link to the camera lost");
+            continue;  // stopped, or the link broke: connect again
+        }
+        wake_requested_ = false;
+        emit stageChanged(Stage::WifiReady, tr("Camera Wi-Fi is up"));
+        emit wifiReady(QString::fromStdString(credentials->ssid), QString::fromStdString(credentials->password));
+
+        // Hang up until the camera has to be woken again (the link ends with `camera`).
+        qInfo("bluetooth: the camera's Wi-Fi is up: hanging up, as DJI Mimo does");
+        camera.disconnect();
+        while (!stop.stop_requested() && !wake_requested_) {
+            sleep_for(stop, 200ms);
+        }
     }
 }

@@ -120,10 +120,20 @@ dji-vcam-cli --seconds 30 --show-messages --send 01,02,8e,0100
 ```
 
 `--send receiver,cmd_set,cmd_id[,payload]` (hex, repeatable) is sent once streaming starts and
-its reply printed; `--show-messages` prints every message the camera sends except the replies to
-the session's own keep-alives. `--camera` follows the camera's settings through the app's camera
-controls and prints them whenever they change; `--camera-set Stabilization=3` (repeatable, codes
-from [camera-controls.md](camera-controls.md)) changes one the way the app's panel does.
+its reply printed (`--send-early`: right after the live-view trigger, before any video);
+`--ble-send` sends one over Bluetooth right after the wake. `--show-messages` prints every message
+the camera sends except the replies to the session's own keep-alives (`--show-all-messages`
+includes them). `--camera` follows the camera's settings through the app's camera controls and
+prints them whenever they change; `--camera-set Stabilization=3` (repeatable, codes from
+[camera-controls.md](camera-controls.md)) changes one the way the app's panel does.
+
+Connection experiments: `--reconnect-test 3,10,30` drops the session after streaming, stays
+silent for each number of seconds and reports whether video comes back; `--ble-hold` keeps the
+Bluetooth link open after the wake (the app hangs up, see protocol-notes.md 3.11);
+`--ble-release-test` times how long the camera takes to advertise again after a hang-up;
+`--no-answer` / `--ble-answer` change whether the camera's own requests are answered on the
+datalink / over Bluetooth. The app writes a log to `%LOCALAPPDATA%\dji-vcam\dji-vcam\logs`
+(the previous run is kept as `dji-vcam.previous.log`).
 
 ## Desktop app on Linux
 

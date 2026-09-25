@@ -99,6 +99,9 @@ private:
     std::unique_ptr<djivcam::LiveViewSession> session_;
     std::unique_ptr<djivcam::camera::CameraController> camera_;
     std::atomic<bool> camera_notified_{false};
+    // Session thread only: diagnostics of connections that get no video.
+    bool video_since_connect_ = false;
+    int messages_logged_ = 0;
     std::unique_ptr<djivcam::h264::AccessUnitAssembler> assembler_;
     std::mutex mutex_;
     std::condition_variable_any wake_;

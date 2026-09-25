@@ -11,19 +11,21 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 2. [ ] Installer: install, start from the Start menu, uninstall (needs administrator prompts)
 3. [x] Live view on main: webcam carries the live camera; loss and noise investigated (camera never
        re-sends, no keyframe request, bridge firmware 0.4.0 cut the loss); freeze-after-loss option
-4. [~] Camera controls: status topics decode correctly on the camera; still to do: confirm the values
-       against the camera screen (EV byte), setter round-trips from the panel
-5. [ ] Native Bluetooth branch (`ble-native`): one-click connect, then merge
+4. [x] Camera controls: status topics decode correctly on the camera, the EV byte matches the camera
+       screen, settings changed in the panel and on the camera follow each other (1 s refresh)
+5. [x] Native Bluetooth branch (`ble-native`): pairs, wakes and fetches the credentials on the
+       camera; merged
 6. [ ] Webcam consumers: OBS (set "Use buffering" off), a browser, Windows Camera
-7. [ ] Camera power cycle while connected: the app should find, wake and stream again by itself
+7. [x] Camera power cycle while connected: the app finds, wakes and streams again by itself, ~15 s
+       after the camera is on. It used to get no video after a short power-off until the camera had
+       been off for a minute: the app kept its Bluetooth link open, DJI Mimo hangs up after the wake
+       (protocol-notes.md 3.11)
 
 ## Now
 
 - [~] **Camera controls** (milestone 7): research in [camera-controls.md](camera-controls.md);
       implemented in the app (Camera settings panel) and the CLI (`--camera`, `--camera-set`),
-      tested against `tools/fake_camera.py`. **Not yet run against the real camera.**
-      - [ ] With the camera: experiments 1-3 of camera-controls.md section 6 (status dump and diff,
-            parameter GET sweep, setter round-trips), then fix any layout that differs on the A5P
+      verified on the camera both ways (camera-controls.md 5b)
       - [x] Mode, record start/stop, photo, recording time
       - [x] Format (resolution with aspect ratio, frame rate), codec
       - [x] Stabilization, Daily/Sport, FOV
@@ -50,10 +52,9 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       - [ ] Test install, upgrade and uninstall (needs an administrator prompt)
       - [x] App icon (exe, windows, installer) and version info
 - [~] **Replace SimpleBLE** (BUSL-1.1) with our own Bluetooth code: C++/WinRT on Windows, BlueZ
-      over D-Bus on Linux, so the project stays freely licensable (branch `ble-native`)
-      - [x] Platform layer (`app/ble/src/central.h`) and Windows backend on C++/WinRT; scanning
-            and the GUI's connect flow verified without the camera
-      - [ ] Verify with the camera (pair, wake, credentials, keepalive), then merge to main
+      over D-Bus on Linux, so the project stays freely licensable
+      - [x] Platform layer (`app/ble/src/central.h`) and Windows backend on C++/WinRT, verified
+            with the camera and merged; it really ends the link on disconnect (SimpleBLE did not)
       - [ ] BlueZ backend for Linux (replaces the SimpleBLE stopgap), with the Linux milestone
 - [ ] **Rename** the repository folder and gdrive remote to `dji-vcam` (end of a session)
 
@@ -65,12 +66,7 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       so it cannot replace the S3 as a USB network adapter)
 - [ ] 1080p30: try the camera's RTMP mode (proven 1080p) received by the app; first the cheap
       live-view experiments 4 and 8 of camera-controls.md (09/A8 enable, stream-quality parameter)
-- [ ] Loss and re-sends: A/B test with the camera on a lossy link, the default (ACK the newest
-      datagram at once) against waiting for re-sends (`video/gapWaitMs` = 50 in the app's
-      settings); compare "delay", "recovered", "dup" and the seconds of lag seen on 2026-09-25
-- [ ] Startup latency: request a keyframe on connect (AppRequestIFrame 0x09/0xA8)
 - [ ] Latency: hand GPU frames to preview / virtual camera without CPU copies
-- [ ] After (re)connecting, skip access units until the first keyframe (avoids a few gray frames)
 - [ ] Optional OBS "direct mode" plugin reusing the core
 
 ## Done
@@ -81,7 +77,12 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 - [x] C++ core (DUML, datalink, reconnecting session, reassembler with gap recovery), tests
 - [x] GPU decoding (D3D11VA/DXVA2, VAAPI/CUDA/VDPAU) with CPU fallback
 - [x] Qt app: preview, stats, resolution, stage messages, settings, options menu
-- [x] Bluetooth in the app: find, pair, wake Wi-Fi, credentials, keepalive, re-wake; bridge setup
+- [x] Bluetooth in the app: find, pair, wake Wi-Fi, credentials, then hang up as DJI Mimo does;
+      re-wake when the camera's network is gone; bridge setup
+- [x] Lost video handled in real time (the camera never re-sends, no keyframe request exists:
+      protocol-notes.md 3.10); the video area shows the connection state instead of a frozen frame
+- [x] Recovery after a camera power cycle (protocol-notes.md 3.11); app log file in
+      `%LOCALAPPDATA%\dji-vcam\dji-vcam\logs`
 - [x] Building and installation guides; portable ZIP packaging into `binaries/`
 - [x] Rename of the app code to dji-vcam
 - [x] Diagnostics: replay of recordings in the app, decode benchmark in the CLI, in-app delay and

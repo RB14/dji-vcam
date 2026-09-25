@@ -130,8 +130,9 @@ as a PNG in `Pictures\DJI VCam`.
 | Stuck on "Searching for the camera" | Switch the camera on / wake it; move it closer; check that Bluetooth is on. `dji-vcam-cli --ble-scan 10` (in the app folder) lists what the computer hears; the camera shows up as "DJI" |
 | Stuck on "Approve the pairing request" | Look at the camera screen and approve; the request expires after about 90 s and is repeated |
 | "ESP32 bridge not found on USB" | Use the board's "USB" port (not "UART"); try another cable |
-| Stuck on "Waiting for the camera network" | Camera Wi-Fi band must be 2.4 GHz; the app re-wakes the camera after 20 s |
-| "No video, reconnecting" | Usually recovers by itself; the camera may be in a menu or playback screen |
+| Stuck on "Waiting for the camera network" | Camera Wi-Fi band must be 2.4 GHz; the app re-wakes the camera after 10 s |
+| Camera switched off and on | Nothing to do: the app finds and wakes it again and the video returns about 15 s after the camera is on (the app uses Bluetooth only to wake the camera, then hangs up, as DJI Mimo does) |
+| "The camera sent no video, connecting again" | Usually recovers by itself; the camera may be in a menu or playback screen |
 | Occasional noise | Wi-Fi interference on 2.4 GHz; keep the bridge and camera close and away from routers |
 | Seconds of lag, jerky video | If **delay** stays small, the lag builds up on the radio link or in the camera, usually with a high **loss**: move the bridge closer to the camera and away from routers, then Disconnect / Connect |
 | Webcam picture is dark gray | The app is not streaming: connect first. The webcam only exists while the app runs |

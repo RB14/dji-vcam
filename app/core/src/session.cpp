@@ -1,5 +1,8 @@
 #include "djivcam/session.h"
 
+#include <array>
+#include <cstdio>
+#include <mutex>
 #include <optional>
 
 #include "djivcam/datalink.h"
@@ -21,6 +24,7 @@ constexpr auto kRegisterInterval = 1000ms;
 constexpr auto kTriggerInterval = 2000ms;
 constexpr auto kRouteRetry = 500ms;
 constexpr auto kConnectRetry = 1000ms;
+constexpr auto kNoVideoReport = 6000ms;  // diagnostics cadence while a connection gets no video
 
 // 62-byte "APP" device-info blob the camera expects from the app (0x00/0x81).
 Bytes app_device_info() {
@@ -34,7 +38,8 @@ Bytes app_device_info() {
     return blob;
 }
 
-// 0x00/0x88 "APP presence" registration payload.
+// 0x00/0x88 "APP presence" registration (query_device_information) payload. DJI Mimo fills bytes
+// 2 and 4 at run time; fixed ones are accepted (osmosis, PocketShow).
 const Bytes kRegisterPayload = {0x17, 0x00, 0x46, 0x23, 0x7c, 0x41, 0x50, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02};
 
 void send_device_info(datalink::Link& link) {
@@ -53,14 +58,17 @@ void send_heartbeat(datalink::Link& link, std::uint8_t counter) {
     link.send_duml(duml::kAddrDm368Second, 0x00, 0x4F, Bytes{0x01, 0x00, counter, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF});
 }
 
-// Every request from the camera must be answered or it drops the session. Replies to the app's
-// requests go to their callbacks; everything else is reported through `on_message`.
+// Requests from the camera are answered (unless `answer_requests` is off: an experiment, see
+// SessionConfig). Replies to the app's requests go to their callbacks; everything else is reported
+// through `on_message`.
 void handle_messages(datalink::Link& link, const datalink::Datagram& datagram, RequestTracker& tracker,
-                     const LiveViewSession::MessageCallback& on_message) {
+                     const LiveViewSession::MessageCallback& on_message, bool answer_requests) {
     for (const duml::Frame& frame : link.duml_frames(datagram)) {
         if (frame.is_request()) {
-            const bool device_info = frame.cmd_set == 0x00 && frame.cmd_id == 0x81;
-            link.send_frame(frame.reply(device_info ? app_device_info() : frame.payload));
+            if (answer_requests) {
+                const bool device_info = frame.cmd_set == 0x00 && frame.cmd_id == 0x81;
+                link.send_frame(frame.reply(device_info ? app_device_info() : frame.payload));
+            }
         } else if (tracker.resolve(frame)) {
             continue;
         }
@@ -105,10 +113,11 @@ void LiveViewSession::stop() {
 void LiveViewSession::request(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id, duml::Bytes payload,
                               ReplyCallback on_reply, std::chrono::milliseconds timeout, std::uint8_t flags) {
     {
-        // Checked under the lock: the session leaves Streaming before it fails the queue (also under
-        // this lock), so a request is either failed with the queue or refused here, never stranded.
+        // Checked under the lock: the session leaves a connection (Streaming or Connecting) before it
+        // fails the queue (also under this lock), so a request is either failed with the queue or
+        // refused here, never stranded. Connecting: e.g. commands while waiting for video.
         std::lock_guard lock(outgoing_mutex_);
-        if (state_ == SessionState::Streaming) {
+        if (state_ == SessionState::Streaming || state_ == SessionState::Connecting) {
             outgoing_.push_back({receiver, cmd_set, cmd_id, std::move(payload), flags, std::move(on_reply), timeout});
             return;
         }
@@ -188,7 +197,7 @@ void LiveViewSession::run(std::stop_token stop) {
         link.send_ack();
         send_trigger(link);
         fail_outgoing();  // queued in a race with the previous connection going down
-        set_state(SessionState::Streaming, "");
+        set_state(SessionState::Connecting, "waiting for video");  // Streaming once video arrives
 
         // 3. Stream until stopped or the camera goes silent.
         VideoReassembler reassembler(
@@ -209,6 +218,24 @@ void LiveViewSession::run(std::stop_token stop) {
                     on_gap_();
                 }
             });
+        // Diagnostics: what the camera does while no video comes (does its video cursor move?).
+        std::array<std::uint64_t, 8> by_type{};
+        std::uint64_t status_frames = 0;
+        std::optional<std::uint16_t> first_cursor;
+        auto report_no_video = [&](const char* when) {
+            if (!on_log_) {
+                return;
+            }
+            char line[256];
+            std::snprintf(line, sizeof(line),
+                          "%s: datagrams by type 1:%llu 3:%llu 5:%llu other:%llu, status frames %llu, "
+                          "camera video cursor %04x -> %04x",
+                          when, static_cast<unsigned long long>(by_type[1]), static_cast<unsigned long long>(by_type[3]),
+                          static_cast<unsigned long long>(by_type[5]),
+                          static_cast<unsigned long long>(by_type[0] + by_type[4] + by_type[6] + by_type[7]),
+                          static_cast<unsigned long long>(status_frames), first_cursor.value_or(0), link.video_cursor());
+            on_log_(line);
+        };
         std::uint8_t heartbeat_counter = 0;
         unsigned heartbeat_ticks = 0;
         const std::uint64_t lost_base = lost_;
@@ -217,10 +244,14 @@ void LiveViewSession::run(std::stop_token stop) {
         auto now = Clock::now();
         auto last_packet = now;
         auto last_video = now;
+        bool video_flowing = false;  // video arrived, and has not stalled since
+        bool had_video = false;      // on this connection
+        bool gave_up = false;
         auto next_ack = now;
         auto next_heartbeat = now;
         auto next_register = now + kRegisterInterval;
         auto next_trigger = now + kTriggerInterval;
+        auto next_report = now + kNoVideoReport;
         RequestTracker tracker;
         while (!stop.stop_requested()) {
             std::vector<Outgoing> batch;
@@ -238,11 +269,29 @@ void LiveViewSession::run(std::stop_token stop) {
             if (auto datagram = link.receive(10ms)) {
                 last_packet = Clock::now();
                 ++datagrams_;
+                ++by_type[static_cast<std::uint8_t>(datagram->type) & 0x07];
+                if (datagram->type == datalink::PacketType::Status && datagram->raw.size() == datalink::kStatusFrameLen) {
+                    ++status_frames;
+                    if (!first_cursor) {
+                        first_cursor = link.video_cursor();
+                    }
+                }
                 if (datagram->type == datalink::PacketType::Video) {
                     last_video = last_packet;
+                    if (!video_flowing) {
+                        video_flowing = true;
+                        had_video = true;
+                        if (on_log_) {
+                            char line[96];
+                            std::snprintf(line, sizeof(line), "video: first datagram seq %04x, camera video cursor %04x",
+                                          datagram->seq, link.video_cursor());
+                            on_log_(line);
+                        }
+                        set_state(SessionState::Streaming, "");
+                    }
                     reassembler.push(datagram->seq, datagram->payload(), last_packet);
                 } else {
-                    handle_messages(link, *datagram, tracker, on_message_);
+                    handle_messages(link, *datagram, tracker, on_message_, config_.answer_requests);
                 }
             }
 
@@ -257,8 +306,22 @@ void LiveViewSession::run(std::stop_token stop) {
                 set_state(SessionState::WaitingForRoute, "camera went silent, reconnecting");
                 break;
             }
-            if (now - last_video > config_.video_timeout) {
-                set_state(SessionState::WaitingForRoute, "no video, reconnecting");
+            if (video_flowing && now - last_video > config_.video_timeout) {
+                video_flowing = false;  // the camera still talks: keep the connection, keep asking
+                by_type = {};
+                status_frames = 0;
+                first_cursor.reset();
+                next_report = now + kNoVideoReport;
+                set_state(SessionState::Connecting, "the camera stopped sending video, waiting for it");
+            }
+            if (!video_flowing && now >= next_report) {
+                report_no_video("no video yet");
+                next_report = now + kNoVideoReport;
+            }
+            if (now - last_video > (had_video ? config_.stalled_video_timeout : config_.no_video_timeout)) {
+                report_no_video("giving up on this connection");
+                set_state(SessionState::Connecting, "the camera sent no video, connecting again");
+                gave_up = true;
                 break;
             }
             if (now >= next_ack) {
@@ -287,6 +350,9 @@ void LiveViewSession::run(std::stop_token stop) {
         }
         tracker.fail_all();  // the link is going down: nobody will answer
         fail_outgoing();
+        if (gave_up) {
+            std::this_thread::sleep_for(kConnectRetry);
+        }
     }
 }
 

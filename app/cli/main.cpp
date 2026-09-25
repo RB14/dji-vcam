@@ -5,11 +5,22 @@
 //        dji-vcam-cli --ble-scan N     list the Bluetooth LE devices advertising nearby for N seconds
 //        dji-vcam-cli --decode-bench FILE [--decoder auto|gpu|cpu] [--frames-out FILE.nv12]
 //                                      time each per-frame step of the live view on a recorded stream
-//   --ble              wake the camera's Wi-Fi over Bluetooth first and keep the BLE link alive
+//   --ble              wake the camera's Wi-Fi over Bluetooth first, then hang up, as DJI Mimo does
+//   --ble-hold         with --ble: keep the Bluetooth link open (the app's behaviour before
+//                      2026-09-25; the camera then sends no video after a short power-off)
 //   --identifier-file  file holding the approved pairing identifier (never printed)
 //   --dump             write the received H.264 stream to PATH
 //   --send R,S,I[,HEX] once streaming, send a DUML request (receiver, command set, command id and
 //                      payload in hex, e.g. 01,02,8e,0100) and print the reply; repeatable
+//   --ble-release-test with --ble: after waking the camera, end the Bluetooth link inside this still
+//                      running process and time how long until the camera advertises again (it only
+//                      advertises while nobody is connected)
+//   --no-answer        do not answer the camera's own requests on the datalink (experiment)
+//   --ble-answer       with --ble: answer the camera's own requests over Bluetooth (DJI Mimo does not)
+//   --ble-send R,S,I[,HEX]  with --ble: after waking the camera, send a DUML request over Bluetooth
+//                      (same format as --send) and print the reply; repeatable
+//   --send-early       send the --send requests right after the live-view trigger instead, before
+//                      any video (e.g. to try to start the video of a camera that sends none)
 //   --show-messages    print every DUML message the camera sends (status pushes)
 //   --camera           follow the camera's settings and status (subscriptions) and print them
 //   --camera-set N=C   once streaming, change setting N (e.g. Stabilization, EV) to code C through
@@ -18,6 +29,8 @@
 //                      skipping it; 0 (default) acknowledges the newest datagram at once
 //   --camera-ip IP     the camera's address (default 192.168.2.1), e.g. 127.0.0.1 for
 //                      tools/fake_camera.py
+//   --reconnect-test S[,S...]  after streaming, drop the session (no goodbye), stay silent S
+//                      seconds, connect again and report whether video comes back; per value
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -297,11 +310,19 @@ int main(int argc, char* argv[]) {
     std::string identifier_file;
     std::string dump_path;
     std::vector<SendSpec> sends;
+    std::vector<SendSpec> ble_sends;
     bool show_messages = false;
+    bool send_early = false;
+    bool no_answer = false;
+    [[maybe_unused]] bool ble_answer = false;
+    [[maybe_unused]] bool ble_hold = false;
+    [[maybe_unused]] bool ble_release_test = false;
+    bool show_all_messages = false;  // including the replies to the session's keep-alives
     bool follow_camera = false;
     std::vector<std::pair<djivcam::camera::Setting, int>> camera_sets;
     std::string camera_ip;
     int gap_wait_ms = 0;
+    std::vector<int> reconnect_gaps;  // seconds of silence before each reconnect
     for (int i = 1; i < argc; ++i) {
         const std::string flag = argv[i];
         const bool has_value = i + 1 < argc;
@@ -330,8 +351,27 @@ int main(int argc, char* argv[]) {
                 return 2;
             }
             sends.push_back(*spec);
+        } else if (flag == "--ble-release-test") {
+            ble_release_test = true;
+        } else if (flag == "--ble-send" && has_value) {
+            const auto spec = parse_send(argv[++i]);
+            if (!spec) {
+                std::fprintf(stderr, "bad --ble-send value: %s (expected e.g. 07,07,15)\n", argv[i]);
+                return 2;
+            }
+            ble_sends.push_back(*spec);
+        } else if (flag == "--no-answer") {
+            no_answer = true;
+        } else if (flag == "--ble-hold") {
+            ble_hold = true;
+        } else if (flag == "--ble-answer") {
+            ble_answer = true;
+        } else if (flag == "--send-early") {
+            send_early = true;
         } else if (flag == "--show-messages") {
             show_messages = true;
+        } else if (flag == "--show-all-messages") {
+            show_messages = show_all_messages = true;
         } else if (flag == "--camera") {
             follow_camera = true;
         } else if (flag == "--camera-set" && has_value) {
@@ -346,6 +386,13 @@ int main(int argc, char* argv[]) {
             gap_wait_ms = std::stoi(argv[++i]);
         } else if (flag == "--camera-ip" && has_value) {
             camera_ip = argv[++i];
+        } else if (flag == "--reconnect-test" && has_value) {
+            const std::string list = argv[++i];
+            for (std::size_t start = 0; start <= list.size();) {
+                const std::size_t end = std::min(list.find(',', start), list.size());
+                reconnect_gaps.push_back(std::stoi(list.substr(start, end - start)));
+                start = end + 1;
+            }
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", flag.c_str());
             return 2;
@@ -398,6 +445,7 @@ int main(int argc, char* argv[]) {
 
     djivcam::SessionConfig config;
     config.gap_timeout = std::chrono::milliseconds(gap_wait_ms);
+    config.answer_requests = !no_answer;
     if (!camera_ip.empty()) {
         config.camera_ip = camera_ip;
         config.camera_subnet_prefix = camera_ip.substr(0, camera_ip.rfind('.') + 1);
@@ -412,6 +460,7 @@ int main(int argc, char* argv[]) {
     std::jthread keepalive;
     if (use_ble) {
         camera.emplace([](const std::string& message) { say("ble: " + message); });
+        camera->set_answer_requests(ble_answer);
         say("searching for the camera over Bluetooth (wake it up if it is asleep)");
         const auto found = camera->find_camera(60s);
         if (!found) {
@@ -435,12 +484,40 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         say("camera Wi-Fi is up: '" + credentials->ssid + "' (password not shown)");
-        keepalive = std::jthread([&camera](std::stop_token stop) {
-            while (!stop.stop_requested()) {
-                camera->keepalive();
-                std::this_thread::sleep_for(1s);
+        for (const SendSpec& spec : ble_sends) {
+            const std::string what = djivcam::duml::Frame{djivcam::duml::kAddrApp, spec.receiver, 0, djivcam::duml::kFlagRequest,
+                                                          spec.cmd_set, spec.cmd_id, spec.payload}
+                                         .describe();
+            const auto reply = camera->request(spec.receiver, spec.cmd_set, spec.cmd_id, spec.payload, 3s);
+            say("bluetooth sent " + what + " -> " + (reply ? reply->describe() : std::string("no reply")));
+        }
+        if (ble_release_test) {
+            camera->disconnect();
+            const auto released = steady_clock::now();
+            say("released the Bluetooth link; this process keeps running");
+            djivcam::ble::CameraBle watcher;
+            while (steady_clock::now() - released < 60s) {
+                if (watcher.find_camera(3s, found->address)) {
+                    say("the camera advertises again " +
+                        std::to_string(duration_cast<milliseconds>(steady_clock::now() - released).count()) +
+                        " ms after the release");
+                    return 0;
+                }
             }
-        });
+            say("the camera did not advertise within 60 s: the link is still held");
+            return 1;
+        }
+        if (ble_hold) {
+            keepalive = std::jthread([&camera](std::stop_token stop) {
+                while (!stop.stop_requested()) {
+                    camera->keepalive();
+                    std::this_thread::sleep_for(1s);
+                }
+            });
+        } else {
+            camera->disconnect();
+            say("hung up Bluetooth (the datalink runs without it, as with DJI Mimo)");
+        }
     }
 #else
     if (use_ble) {
@@ -454,6 +531,7 @@ int main(int argc, char* argv[]) {
     if (!dump_path.empty()) {
         dump.open(dump_path, std::ios::binary);
     }
+    std::atomic<bool> waiting_for_video{false};  // after the live-view trigger, before any video
     djivcam::LiveViewSession session(
         config,
         [&](std::span<const std::uint8_t> video) {
@@ -461,8 +539,9 @@ int main(int argc, char* argv[]) {
                 dump.write(reinterpret_cast<const char*>(video.data()), static_cast<std::streamsize>(video.size()));
             }
         },
-        [&controls](djivcam::SessionState state, const std::string& detail) {
+        [&controls, &waiting_for_video](djivcam::SessionState state, const std::string& detail) {
             say(std::string("state: ") + djivcam::to_string(state) + (detail.empty() ? "" : " - " + detail));
+            waiting_for_video = state == djivcam::SessionState::Connecting && detail == "waiting for video";
             if (state == djivcam::SessionState::Streaming && controls) {
                 controls->on_streaming();
             }
@@ -473,20 +552,22 @@ int main(int argc, char* argv[]) {
             session, [&camera_changed] { camera_changed = true; },
             [](const std::string& error) { say("camera error: " + error); });
     }
-    session.set_message_callback([&controls, show_messages](const djivcam::duml::Frame& frame) {
-        if (show_messages && !is_session_housekeeping(frame)) {
+    session.set_message_callback([&controls, show_messages, show_all_messages](const djivcam::duml::Frame& frame) {
+        if (show_messages && (show_all_messages || !is_session_housekeeping(frame))) {
             say("camera: " + frame.describe());
         }
         if (controls) {
             controls->on_message(frame);
         }
     });
+    session.set_log_callback([](const std::string& line) { say("session: " + line); });
     session.start();
     djivcam::SessionStats previous{};
     bool sent = false;
     for (int second = 0; second < seconds; ++second) {
         std::this_thread::sleep_for(1s);
-        if (!sent && session.state() == djivcam::SessionState::Streaming) {
+        const bool ready = send_early ? waiting_for_video.load() : session.state() == djivcam::SessionState::Streaming;
+        if (!sent && ready) {
             sent = true;
             for (const SendSpec& spec : sends) {
                 const std::string what = djivcam::duml::Frame{djivcam::duml::kAddrApp, spec.receiver, 0, djivcam::duml::kFlagRequest,
@@ -518,6 +599,21 @@ int main(int argc, char* argv[]) {
                       static_cast<unsigned long long>(stats.reconnects));
         say(line);
         previous = stats;
+    }
+    for (const int gap : reconnect_gaps) {
+        session.stop();
+        say("reconnect test: session dropped, silent for " + std::to_string(gap) + " s");
+        std::this_thread::sleep_for(std::chrono::seconds(gap));
+        session.start();
+        const auto started = steady_clock::now();
+        while (session.state() != djivcam::SessionState::Streaming && steady_clock::now() - started < 20s) {
+            std::this_thread::sleep_for(100ms);
+        }
+        const bool video = session.state() == djivcam::SessionState::Streaming;
+        say("reconnect test: after " + std::to_string(gap) + " s of silence: " +
+            (video ? "video after " + std::to_string(duration_cast<milliseconds>(steady_clock::now() - started).count()) + " ms"
+                   : std::string("NO VIDEO within 20 s")));
+        std::this_thread::sleep_for(3s);
     }
     session.stop();
     return 0;

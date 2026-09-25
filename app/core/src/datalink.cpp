@@ -5,7 +5,6 @@
 namespace djivcam::datalink {
 namespace {
 
-constexpr std::size_t kStatusFrameLen = 34;
 // Without video for this long, the ACK falls back to the camera's own video cursor.
 constexpr std::chrono::milliseconds kVideoStall{300};
 constexpr std::uint8_t kPairingSetId = 0x07;

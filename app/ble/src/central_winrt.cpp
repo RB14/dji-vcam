@@ -208,6 +208,9 @@ public:
             }
             subscriptions_.clear();
             characteristics_.clear();
+            for (auto& service : services_) {
+                service.Close();  // an open service keeps the link up too
+            }
             services_.clear();
             if (session_) {
                 session_.Close();  // Windows disconnects once nothing holds the device open
