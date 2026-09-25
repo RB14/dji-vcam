@@ -24,9 +24,6 @@ public:
 
     void showFrame(Frame frame);
     void clear();
-    // Shown large in the middle while there is no video: what the app is doing right now.
-    // `attention` highlights it (the user has to act, e.g. approve on the camera).
-    void setMessage(const QString& message, bool attention = false);
     // The current frame at its own resolution, drawn by the same shader as the preview (null
     // without video).
     QImage snapshot();
@@ -42,8 +39,6 @@ private:
     void release_gl();
 
     Frame frame_;
-    QString message_;
-    bool attention_ = false;
     bool uploaded_ = false;  // frame_ is in the textures
     std::unique_ptr<QOpenGLShaderProgram> program_;  // per GL context: recreated with it
     QOpenGLBuffer quad_{QOpenGLBuffer::VertexBuffer};

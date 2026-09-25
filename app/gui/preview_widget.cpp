@@ -2,7 +2,6 @@
 
 #include <QGenericMatrix>
 #include <QOpenGLFramebufferObject>
-#include <QPainter>
 #include <QVector3D>
 
 namespace {
@@ -67,14 +66,6 @@ void PreviewWidget::showFrame(Frame frame) {
 void PreviewWidget::clear() {
     frame_.reset();
     update();
-}
-
-void PreviewWidget::setMessage(const QString& message, bool attention) {
-    message_ = message;
-    attention_ = attention;
-    if (!frame_) {
-        update();
-    }
 }
 
 void PreviewWidget::initializeGL() {
@@ -143,6 +134,8 @@ void PreviewWidget::upload() {
     glBindTexture(GL_TEXTURE_2D, textures_[1]);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width / 2, height / 2, chroma_format, GL_UNSIGNED_BYTE,
                     luma + static_cast<std::size_t>(width) * height);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);  // Qt's text rendering assumes the default (else sheared glyphs)
+    glBindTexture(GL_TEXTURE_2D, 0);
     uploaded_ = true;
 }
 
@@ -150,18 +143,7 @@ void PreviewWidget::paintGL() {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     if (!frame_ || frame_->width < 2 || frame_->height < 2) {
-        // The viewport may still be the previous frame's letterbox: text belongs to the whole widget.
-        const qreal ratio = devicePixelRatioF();
-        glViewport(0, 0, qRound(width() * ratio), qRound(height() * ratio));
-        QPainter painter(this);
-        QFont font = painter.font();
-        font.setPointSizeF(font.pointSizeF() * 1.6);
-        font.setBold(attention_);
-        painter.setFont(font);
-        painter.setPen(attention_ ? QColor(0xf5, 0x9e, 0x0b) : QColor(0xb0, 0xb0, 0xb0));
-        const QRect area = rect().adjusted(width() / 10, 0, -width() / 10, 0);
-        painter.drawText(area, Qt::AlignCenter | Qt::TextWordWrap, message_.isEmpty() ? tr("No video") : message_);
-        return;
+        return;  // black; the main window shows its status label instead of this widget
     }
     if (!uploaded_) {
         upload();
@@ -206,6 +188,10 @@ void PreviewWidget::draw_frame() {
     program_->enableAttributeArray(0);
     program_->setAttributeBuffer(0, GL_FLOAT, 0, 2);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glActiveTexture(GL_TEXTURE1);  // leave the texture units as Qt's painter expects them
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
     program_->disableAttributeArray(0);
     quad_.release();
     program_->release();

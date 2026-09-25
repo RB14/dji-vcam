@@ -25,7 +25,7 @@ namespace {
 constexpr int kModePhoto = 0x05;
 constexpr int kExposureAuto = 1;
 constexpr int kExposureManual = 4;
-constexpr int kRefreshMs = 5000;  // re-read the settings the camera does not push
+constexpr int kRefreshMs = 1000;  // re-read the settings the camera does not push (stabilization, FOV)
 
 // Shutter speeds offered in manual exposure (1/x s).
 constexpr int kShutterSpeeds[] = {8000, 6400, 5000, 4000, 3200, 2500, 2000, 1600, 1250, 1000, 800, 640, 500,

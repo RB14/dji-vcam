@@ -5,6 +5,7 @@
 #include <QComboBox>
 #include <QDockWidget>
 #include <QScreen>
+#include <QStackedWidget>
 #include <QScrollArea>
 #include <QLabel>
 #include <QMenu>
@@ -71,6 +72,8 @@ MainWindow::MainWindow(QWidget* parent)
       pipeline_(new Pipeline(this)),
       connector_(new CameraConnector(this)),
       preview_(new PreviewWidget(this)),
+      view_(new QStackedWidget(this)),
+      status_view_(new QLabel(this)),
       camera_panel_(new CameraPanel(this)),
       connect_action_(new QAction(tr("Connect"), this)),
       decoder_choice_(new QComboBox(this)),
@@ -82,7 +85,16 @@ MainWindow::MainWindow(QWidget* parent)
     vcam_action_ = new QAction(tr("Virtual camera"), this);
     vcam_label_ = new QLabel(this);
     setWindowTitle(tr("DJI VCam - DJI Osmo Action live view"));
-    setCentralWidget(preview_);
+    status_view_->setAlignment(Qt::AlignCenter);
+    status_view_->setWordWrap(true);
+    status_view_->setMargin(40);
+    status_view_->setAutoFillBackground(true);
+    QPalette dark = status_view_->palette();
+    dark.setColor(QPalette::Window, Qt::black);
+    status_view_->setPalette(dark);
+    view_->addWidget(status_view_);
+    view_->addWidget(preview_);
+    setCentralWidget(view_);
     // Room for the preview and the camera settings, but never larger than the screen.
     const QRect available = screen()->availableGeometry();
     resize(std::min(1560, available.width() * 9 / 10), std::min(820, available.height() * 9 / 10));
@@ -150,11 +162,13 @@ MainWindow::MainWindow(QWidget* parent)
     connect(pipeline_, &Pipeline::frameAvailable, this, [this] {
         if (auto frame = pipeline_->takeLatestFrame(); frame && pipeline_->running()) {
             preview_->showFrame(std::move(frame));
+            view_->setCurrentWidget(preview_);
         }
     });
     connect(pipeline_, &Pipeline::stateChanged, this, &MainWindow::onSessionState);
     connect(pipeline_, &Pipeline::cameraChanged, this, [this] { camera_panel_->showState(pipeline_->takeCameraState()); });
     connect(pipeline_, &Pipeline::cameraError, this, [this](const QString& message) {
+        qInfo("camera: %s", qPrintable(message));
         statusBar()->showMessage(tr("Camera: %1").arg(message), 8000);
         camera_panel_->showState(pipeline_->takeCameraState());  // snap refused values back
     });
@@ -191,7 +205,7 @@ MainWindow::MainWindow(QWidget* parent)
     vcam_action_->setToolTip(tr("The virtual camera is not available on this platform yet"));
 #endif
     updateVirtualCameraStatus();
-    preview_->setMessage(state_label_->text());
+    showStage(state_label_->text());
 
     if (startup_action_->isChecked()) {
         QTimer::singleShot(0, this, &MainWindow::connectCamera);
@@ -306,13 +320,14 @@ void MainWindow::forgetCamera() {
 }
 
 void MainWindow::toggleConnection(bool connect) {
+    qInfo(connect ? "connect" : "disconnect");
     connect_action_->setText(connect ? tr("Disconnect") : tr("Connect"));
     decoder_choice_->setEnabled(!connect);
     if (!connect) {
         connector_->stop();
         camera_panel_->setController(nullptr);
         pipeline_->stop();
-        preview_->clear();
+        showStatusView();
         streaming_ = false;
         showStage(tr("Not connected: click Connect"));
         format_label_->clear();
@@ -348,14 +363,24 @@ void MainWindow::toggleConnection(bool connect) {
 
 void MainWindow::showStage(const QString& text, bool attention) {
     state_label_->setText(text);
-    preview_->setMessage(text, attention);  // large, in the middle, until video arrives
+    // The same text, large, where the video would be (shown whenever there is no video).
+    status_view_->setText(text);
+    status_view_->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 16pt; %2 }")
+                                    .arg(attention ? QStringLiteral("#f59e0b") : QStringLiteral("#b0b0b0"),
+                                         attention ? QStringLiteral("font-weight: bold;") : QString()));
     state_label_->setStyleSheet(attention ? QStringLiteral("color: #d97706; font-weight: bold;") : QString());
     if (attention) {
         QApplication::alert(this);
     }
 }
 
+void MainWindow::showStatusView() {
+    preview_->clear();
+    view_->setCurrentWidget(status_view_);
+}
+
 void MainWindow::onConnectorStage(Stage stage, const QString& detail) {
+    qInfo("bluetooth: %s", qPrintable(detail));
     connector_stage_ = stage;
     // Bluetooth stages matter until the camera's Wi-Fi is up; after that the session speaks.
     if (!streaming_ && stage != Stage::Idle && stage != Stage::WifiReady) {
@@ -381,7 +406,12 @@ void MainWindow::onWifiReady(const QString& ssid, const QString& password) {
 }
 
 void MainWindow::onSessionState(const QString& state, const QString& detail) {
+    qInfo("session: %s%s", qPrintable(state), detail.isEmpty() ? "" : qPrintable(" (" + detail + ")"));
+    const bool was_streaming = streaming_;
     streaming_ = state == QLatin1String("streaming");
+    if (was_streaming && !streaming_) {
+        showStatusView();  // no frozen picture: show what the app is doing instead
+    }
     if (state == QLatin1String("waiting for camera network")) {
         if (!network_missing_.isValid()) {
             network_missing_.start();  // checked every second in onStats()
@@ -403,8 +433,13 @@ void MainWindow::onSessionState(const QString& state, const QString& detail) {
 void MainWindow::onStats(const LiveStats& stats) {
     if (!streaming_ && network_missing_.isValid() && network_missing_.elapsed() > kRewakeAfterMs &&
         connector_stage_ == Stage::WifiReady) {
+        qInfo("camera network missing for %lld ms: waking the camera again", network_missing_.elapsed());
         connector_->wakeAgain();  // the camera's access point went away
         network_missing_.restart();
+    }
+    if (streaming_ && ++stats_seconds_ % 10 == 0) {
+        qInfo("stats: %.0f fps, %.0f kbit/s, delay %.0f ms, loss %.2f%%, %.0f held, %llu reconnects", stats.fps, stats.kbps,
+              stats.delay_ms, stats.loss_percent, stats.held, static_cast<unsigned long long>(stats.reconnects));
     }
     // "delay" is the app's own share of the latency; seconds of lag with a small delay here come
     // from the camera or the radio link.

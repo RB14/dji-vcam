@@ -8,6 +8,7 @@
 
 class QAction;
 class CameraPanel;
+class QStackedWidget;
 class QComboBox;
 class QLabel;
 class QSettings;
@@ -41,6 +42,8 @@ private:
     void onDecoder(const QString& backend, bool hardware);
     void forgetCamera();
     void showStage(const QString& text, bool attention = false);
+    // Replaces the video by the status label (not connected, connecting, video lost).
+    void showStatusView();
     QString pairingIdentifier();
     void enableVirtualCamera(bool on);
     // Saves the current live-view frame as a PNG in Pictures\DJI VCam.
@@ -51,6 +54,9 @@ private:
     Pipeline* pipeline_;
     CameraConnector* connector_;
     PreviewWidget* preview_;
+    // The video, or instead of it (no video yet, or lost) a label saying what the app is doing.
+    QStackedWidget* view_;
+    QLabel* status_view_;
     CameraPanel* camera_panel_;
     QAction* connect_action_;
     QAction* bluetooth_action_;
@@ -70,4 +76,5 @@ private:
     bool streaming_ = false;
     QString replay_file_;  // set: "Connect" replays this file instead
     QElapsedTimer network_missing_;  // how long the session has been waiting for the camera network
+    unsigned stats_seconds_ = 0;     // for a stats line in the log every 10 s
 };
