@@ -42,6 +42,9 @@ esp_err_t wifi_link_set_credentials(const char *ssid, const char *password);
 /* Erases stored credentials and disconnects. */
 esp_err_t wifi_link_forget(void);
 
+/* Leaves the camera's network (a clean deauthentication) and joins it again at once (diagnostics). */
+esp_err_t wifi_link_rejoin(void);
+
 /* Blocking scan; prints results through the log. */
 esp_err_t wifi_link_scan(void);
 

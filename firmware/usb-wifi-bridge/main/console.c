@@ -162,15 +162,22 @@ static int tokenize(char *line, char *argv[], int max_args)
 
 static void cmd_help(void)
 {
-    con_printf("commands:\n"
-               "  status                  link, filter and traffic counters\n"
-               "  scan                    list nearby 2.4 GHz networks\n"
-               "  wifi <ssid> <password>  store credentials and connect (quote SSIDs with spaces)\n"
-               "  forget                  erase credentials and disconnect\n"
-               "  filter on|off           strip gateway/DNS from DHCP replies (default on)\n"
-               "  version                 firmware version and running partition\n"
-               "  ota <size> <sha256>     receive a firmware image (used by tools/bridge_ota.py)\n"
-               "  reboot                  restart the firmware\n");
+    /* One line per call: con_printf() formats into a 256-byte buffer. */
+    static const char *const lines[] = {
+        "commands:",
+        "  status                  link, filter and traffic counters",
+        "  scan                    list nearby 2.4 GHz networks",
+        "  wifi <ssid> <password>  store credentials and connect (quote SSIDs with spaces)",
+        "  forget                  erase credentials and disconnect",
+        "  rejoin                  leave the camera's network and join it again",
+        "  filter on|off           strip gateway/DNS from DHCP replies (default on)",
+        "  version                 firmware version and running partition",
+        "  ota <size> <sha256>     receive a firmware image (used by tools/bridge_ota.py)",
+        "  reboot                  restart the firmware",
+    };
+    for (size_t i = 0; i < sizeof(lines) / sizeof(lines[0]); i++) {
+        con_printf("%s\n", lines[i]);
+    }
 }
 
 static bool parse_sha256(const char *hex, uint8_t out[OTA_SHA256_LEN])
@@ -292,6 +299,8 @@ static void run_command(char *line)
         con_printf("wifi: %s\n", esp_err_to_name(err));
     } else if (strcmp(cmd, "forget") == 0) {
         con_printf("forget: %s\n", esp_err_to_name(wifi_link_forget()));
+    } else if (strcmp(cmd, "rejoin") == 0) {
+        con_printf("rejoin: %s\n", esp_err_to_name(wifi_link_rejoin()));
     } else if (strcmp(cmd, "filter") == 0 && argc == 2) {
         bridge_set_filter_enabled(strcmp(argv[1], "off") != 0);
         con_printf("filter: %s\n", bridge_filter_enabled() ? "on" : "off");

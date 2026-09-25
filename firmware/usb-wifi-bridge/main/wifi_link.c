@@ -177,6 +177,16 @@ esp_err_t wifi_link_forget(void)
     return err;
 }
 
+esp_err_t wifi_link_rejoin(void)
+{
+    if (!s_configured) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    ESP_LOGI(TAG, "rejoining '%s'", (const char *)s_config.sta.ssid);
+    /* The disconnect event handler connects again (s_configured stays set). */
+    return s_connected ? esp_wifi_disconnect() : ESP_OK;
+}
+
 static const char *auth_name(wifi_auth_mode_t mode)
 {
     switch (mode) {

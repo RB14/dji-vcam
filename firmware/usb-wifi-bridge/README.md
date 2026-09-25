@@ -19,6 +19,7 @@ Plug the board in through its **"USB"** port (native USB, GPIO19/20), not the "U
   | `scan` | list nearby 2.4 GHz networks |
   | `wifi <ssid> <password>` | store credentials in NVS and connect (quote SSIDs with spaces) |
   | `forget` | erase credentials, disconnect |
+  | `rejoin` | leave the camera's network and join it again |
   | `filter on\|off` | DHCP/RA scrubbing (default on) |
   | `version` | firmware version, build time, running partition and its OTA state |
   | `ota <size> <sha256>` | receive a firmware image (driven by `tools/bridge_ota.py`) |
@@ -39,6 +40,8 @@ only learns a route to the camera subnet and never a default gateway through thi
   transfer blocks, so bursts are buffered instead of dropped. `status` shows drops and the queue's
   peak. Queued frames keep their Wi-Fi driver RX buffer, so the driver has 256 of them, in the
   board's PSRAM (firmware 0.4.0): with 64, keyframe bursts made it discard frames silently.
+- `rejoin` (firmware 0.4.1) leaves the camera's network with a clean deauthentication and joins it
+  again (diagnostics). `help` lists every command (0.4.0 cut the list short).
 
 ## Build and flash
 
