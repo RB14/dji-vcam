@@ -405,6 +405,14 @@ unanswered, as Mimo does. Verified 2026-09-25: five short power cycles in a row 
 after the video had come back, the case that used to fail) each got video on the first connection,
 ~15 s after the camera was on. (`dji-vcam-cli --ble --ble-hold` keeps the link open, to reproduce.)
 
+The same rule applies in the other direction: a Bluetooth session that starts while a datalink
+streams takes that datalink's video away (seen on a quick Disconnect / Connect, when the camera's
+Wi-Fi was still up and the datalink connected before the new Bluetooth session had finished; the
+camera also refused Bluetooth service discovery while it streamed). The app therefore starts no
+datalink connection while a Bluetooth session is open, and after hanging up it waits until the
+camera has noticed (it advertises again, ~3.1-3.6 s) before the datalink may connect: a live view
+started just before the camera drops the Bluetooth session dies with it.
+
 ## 4. Verified A5P video alternative: RTMP push over BLE (Moblin)
 
 [V-A5P per Moblin code comments: "Patch for OA5P …" (`DjiDevice.swift:415-425`); model-specific configure byte `0x1A` for A5P/360 (`:340-349`); `hasNewProtocol()` = true for A5P (`SettingsDjiDevice.swift:80-101`)]

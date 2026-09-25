@@ -76,6 +76,12 @@ void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPrefe
     session_->start();
 }
 
+void Pipeline::setConnectAllowed(bool allowed) {
+    if (session_) {
+        session_->set_connect_allowed(allowed);
+    }
+}
+
 void Pipeline::startReplay(const QString& path, djivcam::media::DecoderPreference decoder) {
     stop();
     QFile file(path);

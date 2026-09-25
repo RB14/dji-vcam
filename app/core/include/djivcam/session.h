@@ -59,6 +59,11 @@ struct SessionConfig {
     // Whether to answer the camera's own requests on the datalink (0x00/0x81 device info, others
     // echoed). Default: answer. (Experiment switch: DJI Mimo answers none of them over Bluetooth.)
     bool answer_requests = true;
+    // Whether connections may start (set_connect_allowed() changes it). The camera ties its live
+    // view to the app's Bluetooth session: a datalink started before a Bluetooth session, or
+    // while one is open, loses its video. With Bluetooth, start blocked and allow connections
+    // once the Bluetooth session has woken the camera and hung up.
+    bool connect_allowed = true;
 };
 
 struct SessionStats {
@@ -96,6 +101,8 @@ public:
     void set_message_callback(MessageCallback callback) { on_message_ = std::move(callback); }
     void set_gap_callback(GapCallback callback) { on_gap_ = std::move(callback); }
     void set_log_callback(LogCallback callback) { on_log_ = std::move(callback); }
+    // Lets new connections start, or holds them (thread-safe; a running connection is kept).
+    void set_connect_allowed(bool allowed) { connect_allowed_ = allowed; }
 
     void start();
     void stop();
@@ -126,6 +133,7 @@ private:
     void fail_outgoing();
 
     SessionConfig config_;
+    std::atomic<bool> connect_allowed_{true};
     VideoCallback on_video_;
     StateCallback on_state_;
     MessageCallback on_message_;

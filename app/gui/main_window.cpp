@@ -345,6 +345,8 @@ void MainWindow::toggleConnection(bool connect) {
     djivcam::SessionConfig config;
     config.identifier = pairingIdentifier().toStdString();
     config.token = kPairingToken.toStdString();
+    // With Bluetooth the datalink waits until the Bluetooth session has woken the camera and hung up.
+    config.connect_allowed = !(bluetooth_action_->isChecked() && CameraConnector::bluetoothAvailable());
     const QString camera_ip = settings_->value(kCameraIpKey, QString::fromStdString(config.camera_ip)).toString();
     config.camera_ip = camera_ip.toStdString();
     config.camera_subnet_prefix = camera_ip.left(camera_ip.lastIndexOf(QLatin1Char('.')) + 1).toStdString();
@@ -382,6 +384,12 @@ void MainWindow::showStatusView() {
 void MainWindow::onConnectorStage(Stage stage, const QString& detail) {
     qInfo("bluetooth: %s", qPrintable(detail));
     connector_stage_ = stage;
+    // No datalink connection may start while a Bluetooth session is open (it would lose its video).
+    if (stage == Stage::Pairing || stage == Stage::ApprovalNeeded || stage == Stage::WakingWifi) {
+        pipeline_->setConnectAllowed(false);
+    } else if (stage == Stage::WifiReady) {
+        pipeline_->setConnectAllowed(true);
+    }
     // Bluetooth stages matter until the camera's Wi-Fi is up; after that the session speaks.
     if (!streaming_ && stage != Stage::Idle && stage != Stage::WifiReady) {
         showStage(detail, stage == Stage::ApprovalNeeded || stage == Stage::Failed);

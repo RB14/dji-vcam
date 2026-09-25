@@ -61,6 +61,8 @@ public:
     // After lost video, keep showing the last intact frame until the next keyframe instead of the
     // damaged frames in between (the camera never re-sends lost video).
     void setHoldOnLoss(bool hold) { hold_on_loss_ = hold; }
+    // Lets the datalink start new connections, or holds them (see SessionConfig::connect_allowed).
+    void setConnectAllowed(bool allowed);
 
     // The camera's settings while connected live (null otherwise, e.g. during a replay).
     djivcam::camera::CameraController* camera() const { return camera_.get(); }

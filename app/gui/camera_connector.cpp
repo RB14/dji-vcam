@@ -13,6 +13,9 @@ using Stage = CameraConnector::Stage;
 constexpr auto kScanWindow = 20s;
 constexpr auto kApprovalTimeout = 90s;
 constexpr auto kRetryDelay = 3s;
+// After hanging up, the camera only notices ~3 s later (then it advertises again); a live view
+// started before that dies with the old Bluetooth session. Wait for its advertising, at most this.
+constexpr auto kHangUpNoticed = 6s;
 
 // Sleeps in small steps so stop requests are honoured promptly.
 void sleep_for(std::stop_token stop, std::chrono::milliseconds duration) {
@@ -89,13 +92,19 @@ void CameraConnector::run(std::stop_token stop, QString identifier, QString toke
             qInfo("bluetooth: link to the camera lost");
             continue;  // stopped, or the link broke: connect again
         }
+        // Hang up before the datalink may start (the camera ties its live view to the Bluetooth
+        // session) and until the camera has to be woken again; the datalink starts once the camera
+        // has noticed (it advertises again).
+        qInfo("bluetooth: the camera's Wi-Fi is up: hanging up, as DJI Mimo does");
+        camera.disconnect();
+        const auto hung_up = std::chrono::steady_clock::now();
+        djivcam::ble::CameraBle watcher;
+        const bool noticed = watcher.find_camera(kHangUpNoticed, found->address, stop).has_value();
+        qInfo("bluetooth: the camera %s after %lld ms", noticed ? "noticed the hang-up" : "did not advertise yet",
+              static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - hung_up).count()));
         wake_requested_ = false;
         emit stageChanged(Stage::WifiReady, tr("Camera Wi-Fi is up"));
         emit wifiReady(QString::fromStdString(credentials->ssid), QString::fromStdString(credentials->password));
-
-        // Hang up until the camera has to be woken again (the link ends with `camera`).
-        qInfo("bluetooth: the camera's Wi-Fi is up: hanging up, as DJI Mimo does");
-        camera.disconnect();
         while (!stop.stop_requested() && !wake_requested_) {
             sleep_for(stop, 200ms);
         }

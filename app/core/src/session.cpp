@@ -91,7 +91,9 @@ const char* to_string(SessionState state) {
 }
 
 LiveViewSession::LiveViewSession(SessionConfig config, VideoCallback on_video, StateCallback on_state)
-    : config_(std::move(config)), on_video_(std::move(on_video)), on_state_(std::move(on_state)) {}
+    : config_(std::move(config)), on_video_(std::move(on_video)), on_state_(std::move(on_state)) {
+    connect_allowed_ = config_.connect_allowed;
+}
 
 LiveViewSession::~LiveViewSession() { stop(); }
 
@@ -160,13 +162,15 @@ void LiveViewSession::run(std::stop_token stop) {
         }
         first_attempt = false;
 
-        // 1. Wait until this host has an address on the camera subnet.
+        // 1. Wait until connections are allowed and this host has an address on the camera subnet.
         set_state(SessionState::WaitingForRoute, "");
         std::optional<std::string> local_ip;
         while (!stop.stop_requested()) {
-            local_ip = net::local_ip_towards(config_.camera_ip, config_.port);
-            if (local_ip && local_ip->starts_with(config_.camera_subnet_prefix)) {
-                break;
+            if (connect_allowed_) {
+                local_ip = net::local_ip_towards(config_.camera_ip, config_.port);
+                if (local_ip && local_ip->starts_with(config_.camera_subnet_prefix)) {
+                    break;
+                }
             }
             std::this_thread::sleep_for(kRouteRetry);
         }
