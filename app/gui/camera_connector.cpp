@@ -54,7 +54,7 @@ void CameraConnector::run(std::stop_token stop, QString identifier, QString toke
         emit stageChanged(Stage::Searching, tr("Searching for the camera over Bluetooth (make sure it is on)"));
         std::optional<djivcam::ble::Camera> found;
         while (!stop.stop_requested() && !found) {
-            found = camera.find_camera(kScanWindow, address.toStdString());
+            found = camera.find_camera(kScanWindow, address.toStdString(), stop);
         }
         if (!found) {
             return;
@@ -70,7 +70,7 @@ void CameraConnector::run(std::stop_token stop, QString identifier, QString toke
         const auto paired = camera.pair(identifier.toStdString(), token.toStdString(), kApprovalTimeout, [&] {
             emit stageChanged(Stage::ApprovalNeeded,
                               tr("Approve the pairing request on the camera screen (%1)").arg(token.toUpper()));
-        });
+        }, stop);
         if (paired == djivcam::ble::PairResult::TimedOut || paired == djivcam::ble::PairResult::Failed) {
             emit stageChanged(Stage::Failed, paired == djivcam::ble::PairResult::TimedOut
                                                  ? tr("Pairing was not approved on the camera, retrying")

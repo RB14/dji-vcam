@@ -2,6 +2,7 @@
 //
 // Usage: dji-vcam-cli [--ble] [--seconds N] [--identifier-file PATH] [--dump PATH]
 //        dji-vcam-cli --vcam-test N    publish a test pattern to the DJI VCam webcam for N seconds
+//        dji-vcam-cli --ble-scan N     list the Bluetooth LE devices advertising nearby for N seconds
 //        dji-vcam-cli --decode-bench FILE [--decoder auto|gpu|cpu] [--frames-out FILE.nv12]
 //                                      time each per-frame step of the live view on a recorded stream
 //   --ble              wake the camera's Wi-Fi over Bluetooth first and keep the BLE link alive
@@ -289,6 +290,7 @@ int main(int argc, char* argv[]) {
     int seconds = 20;
     bool use_ble = false;
     int vcam_test_seconds = 0;
+    int ble_scan_seconds = 0;
     std::string bench_file;
     std::string decoder_choice = "auto";
     std::string frames_out;
@@ -305,6 +307,8 @@ int main(int argc, char* argv[]) {
         const bool has_value = i + 1 < argc;
         if (flag == "--ble") {
             use_ble = true;
+        } else if (flag == "--ble-scan" && has_value) {
+            ble_scan_seconds = std::stoi(argv[++i]);
         } else if (flag == "--vcam-test" && has_value) {
             vcam_test_seconds = std::stoi(argv[++i]);
         } else if (flag == "--decode-bench" && has_value) {
@@ -353,6 +357,28 @@ int main(int argc, char* argv[]) {
         return run_vcam_test(vcam_test_seconds);
 #else
         std::fprintf(stderr, "built without the virtual camera\n");
+        return 2;
+#endif
+    }
+
+    if (ble_scan_seconds > 0) {
+#ifdef DJIVCAM_HAVE_BLE
+        say("scanning for Bluetooth LE devices for " + std::to_string(ble_scan_seconds) + " s");
+        const auto devices = djivcam::ble::scan_nearby(std::chrono::seconds(ble_scan_seconds));
+        for (const auto& device : devices) {
+            char dji[32] = "";
+            if (device.dji_model) {
+                std::snprintf(dji, sizeof(dji), "  DJI, model 0x%02x", *device.dji_model);
+            }
+            char line[160];
+            std::snprintf(line, sizeof(line), "%s  %4d dBm  %-24s%s", device.address.c_str(), device.rssi,
+                          device.name.empty() ? "(no name)" : device.name.c_str(), dji);
+            say(line);
+        }
+        say(std::to_string(devices.size()) + " devices");
+        return 0;
+#else
+        std::fprintf(stderr, "built without Bluetooth support\n");
         return 2;
 #endif
     }

@@ -4,7 +4,7 @@ The repository has three parts:
 
 | Part | Language / toolchain | Where |
 |---|---|---|
-| Desktop app (`dji-vcam`) | C++20, CMake, Qt 6.8, FFmpeg, SimpleBLE | `app/` |
+| Desktop app (`dji-vcam`) | C++20, CMake, Qt 6.8, FFmpeg, C++/WinRT (Windows Bluetooth) | `app/` |
 | ESP32-S3 USB Wi-Fi bridge firmware | C, ESP-IDF 5.5 | `firmware/usb-wifi-bridge/` |
 | Research / test tools | Python 3.12 (Windows) | `tools/`, driven by `obs-dji.sh` |
 
@@ -33,7 +33,8 @@ FFmpeg 8.1 LGPL shared development build (headers, import libraries and DLLs): d
 `%USERPROFILE%\.dji-vcam\deps\ffmpeg` (so that `include\libavcodec\avcodec.h` exists there).
 From WSL, `app/scripts/setup-windows-deps.sh` does this for you.
 
-SimpleBLE and GoogleTest are downloaded by CMake at configure time.
+GoogleTest (and on Linux SimpleBLE) are downloaded by CMake at configure time. Bluetooth on
+Windows uses the Windows SDK's C++/WinRT headers.
 
 ### Build natively (PowerShell)
 
@@ -106,6 +107,8 @@ The version comes from `project(dji-vcam VERSION ...)` in `app/CMakeLists.txt`.
   with the documented status pushes. Point the app at it with the advanced setting
   `connect/cameraIp` = `127.0.0.1` (registry `HKCU\Software\dji-vcam\dji-vcam\connect`, turn off
   the Bluetooth and bridge options too) or `dji-vcam-cli --camera-ip 127.0.0.1`.
+- `dji-vcam-cli --ble-scan 10` lists the Bluetooth LE devices advertising nearby and marks DJI
+  cameras (with their model byte).
 
 ### Experimenting with camera commands
 
