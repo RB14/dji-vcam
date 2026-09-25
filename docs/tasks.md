@@ -70,6 +70,12 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 ## Later
 
 - [ ] Linux: v4l2loopback virtual camera, BlueZ, NetworkManager link; test on a real Linux machine
+- [ ] Built-in Wi-Fi link: join the camera AP with the computer's own Wi-Fi (no bridge; no Wi-Fi
+      internet while connected, fine with Ethernet)
+- [ ] Bluetooth wake from the ESP32 bridge (the S3 has BLE): no Bluetooth needed on the computer
+- [ ] Other camera models: test the Action 4/6, Osmo 360, Pocket 3 (the app names them, only 0x15
+      tested); prefer known camera models in the Bluetooth search (a DJI Mic could be picked first)
+- [ ] Releases: signed installer and bridge firmware as GitHub release downloads
 - [ ] Wi-Fi adapter link: detect a second adapter, join the camera AP on it, keep internet routing;
       a 5 GHz USB dongle is the way to 5 GHz (the ESP32-C5 has no usable USB device mode in ESP-IDF,
       so it cannot replace the S3 as a USB network adapter)

@@ -8,10 +8,13 @@ webcam.
 
 ## What you need
 
-- Windows 11 with **Bluetooth** (to wake the camera and read its Wi-Fi details).
-- A **DJI Osmo Action 5 Pro** that has been activated with the DJI Mimo app at least once.
+- Windows 11 with **Bluetooth** (to wake the camera and read its Wi-Fi details). A desktop without
+  Bluetooth needs a USB Bluetooth adapter.
+- A **DJI Osmo Action 5 Pro** that has been activated with the DJI Mimo app at least once. It is the
+  only camera tested so far; the toolbar shows the model the app found and the status bar warns
+  when it is another one.
 - A way for the computer to reach the camera's own Wi-Fi while keeping your normal internet
-  connection. Today that is the **ESP32-S3 USB bridge** (an ESP32-S3-DevKitC-1 flashed with
+  connection. Today that is the **ESP32-S3 USB bridge** (an ESP32-S3-DevKitC-1 N16R8 flashed with
   `firmware/usb-wifi-bridge`, plugged in through its "USB" port). A second USB Wi-Fi adapter will
   also work once that link type lands.
 
