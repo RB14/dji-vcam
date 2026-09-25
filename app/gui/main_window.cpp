@@ -94,6 +94,7 @@ MainWindow::MainWindow(QWidget* parent)
       decoder_label_(new QLabel(this)) {
     vcam_action_ = new QAction(tr("Virtual camera"), this);
     vcam_label_ = new QLabel(this);
+    wifi_label_ = new QLabel(this);
     setWindowTitle(tr("DJI VCam - DJI Osmo Action live view"));
     status_view_->setAlignment(Qt::AlignCenter);
     status_view_->setWordWrap(true);
@@ -147,6 +148,7 @@ MainWindow::MainWindow(QWidget* parent)
         connect(action, &QAction::triggered, this, [this, value] {
             settings_->setValue(kWifiChannelKey, value);
             channel_scanned_ = false;  // a new automatic choice may scan again
+            showWifiChannel();
             statusBar()->showMessage(tr("The camera's Wi-Fi channel changes at the next Connect"), 6000);
         });
     }
@@ -180,6 +182,7 @@ MainWindow::MainWindow(QWidget* parent)
     statusBar()->addWidget(state_label_, 1);
     statusBar()->addPermanentWidget(vcam_label_);
     statusBar()->addPermanentWidget(format_label_);
+    statusBar()->addPermanentWidget(wifi_label_);
     statusBar()->addPermanentWidget(stats_label_);
     statusBar()->addPermanentWidget(decoder_label_);
 
@@ -212,7 +215,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(connector_, &CameraConnector::stageChanged, this, &MainWindow::onConnectorStage);
     connect(connector_, &CameraConnector::wifiReady, this, &MainWindow::onWifiReady);
     connect(connector_, &CameraConnector::wifiChannelChanged, this, [this](int channel) {
-        settings_->setValue(kCameraChannelKey, channel);
+        setKnownWifiChannel(channel);
         statusBar()->showMessage(tr("The camera's Wi-Fi moved to channel %1").arg(channel), 8000);
     });
     connect(connector_, &CameraConnector::cameraFound, this, [this](const QString& name, const QString& address) {
@@ -235,6 +238,7 @@ MainWindow::MainWindow(QWidget* parent)
     vcam_action_->setToolTip(tr("The virtual camera is not available on this platform yet"));
 #endif
     updateVirtualCameraStatus();
+    showWifiChannel();
     showStage(state_label_->text());
 
     if (startup_action_->isChecked()) {
@@ -352,6 +356,9 @@ QString MainWindow::pairingIdentifier() {
 void MainWindow::forgetCamera() {
     settings_->remove(kIdentifierKey);
     settings_->remove(kAddressKey);
+    settings_->remove(kCameraSsidKey);  // another camera has its own network and channel
+    setKnownWifiChannel(0);
+    channel_scanned_ = false;
     camera_label_->clear();
     QMessageBox::information(this, tr("Camera forgotten"),
                              tr("The next connection pairs again; approve the request on the camera screen."));
@@ -371,6 +378,7 @@ void MainWindow::toggleConnection(bool connect) {
         format_label_->clear();
         stats_label_->clear();
         decoder_label_->clear();
+        decoder_label_->setToolTip({});
         return;
     }
     const auto decoder = static_cast<DecoderPreference>(decoder_choice_->currentData().toInt());
@@ -468,7 +476,7 @@ void MainWindow::chooseWifiChannel() {
                 }
             }
             if (current != known) {
-                settings_->setValue(kCameraChannelKey, current);
+                setKnownWifiChannel(current);
             }
             const int best = djivcam::wifi::quietest_channel(*networks, ssid, current);
             // Each channel's interference as one equivalent signal level, to check the choice.
@@ -564,6 +572,31 @@ void MainWindow::onStats(const LiveStats& stats) {
                               .arg(stats.reconnects));
 }
 
-void MainWindow::onDecoder(const QString& backend, bool hardware) {
-    decoder_label_->setText(tr("decoder: %1 (%2)").arg(backend, hardware ? tr("GPU") : tr("CPU")));
+void MainWindow::onDecoder(const QString& backend, const QString& gpu, bool hardware) {
+    qInfo("decoder: %s%s", qPrintable(backend), gpu.isEmpty() ? "" : qPrintable(QStringLiteral(" on ") + gpu));
+    if (!hardware) {
+        decoder_label_->setText(tr("decoder: CPU"));
+        decoder_label_->setToolTip(tr("Software decoding (FFmpeg)"));
+        return;
+    }
+    decoder_label_->setText(tr("decoder: GPU (%1)").arg(gpu.isEmpty() ? backend : gpu));
+    decoder_label_->setToolTip(tr("Hardware decoding with FFmpeg's %1").arg(backend));
+}
+
+void MainWindow::setKnownWifiChannel(int channel) {
+    if (channel > 0) {
+        settings_->setValue(kCameraChannelKey, channel);
+    } else {
+        settings_->remove(kCameraChannelKey);
+    }
+    showWifiChannel();
+}
+
+void MainWindow::showWifiChannel() {
+    // A setting the camera keeps: shown also while disconnected.
+    const int channel = settings_->value(kCameraChannelKey, 0).toInt();
+    const int choice = settings_->value(kWifiChannelKey, 0).toInt();
+    wifi_label_->setText(channel > 0 ? tr("Wi-Fi: ch %1").arg(channel) : QString());
+    const QString mode = choice == 0 ? tr("automatic") : choice < 0 ? tr("left as the camera has it") : tr("channel %1").arg(choice);
+    wifi_label_->setToolTip(tr("The camera's 2.4 GHz Wi-Fi channel as last heard or set (Options → Camera Wi-Fi channel: %1)").arg(mode));
 }

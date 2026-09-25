@@ -51,10 +51,13 @@ administrator prompt) and registers the webcam for your user account.
 
 While the app has no video, the current step is also shown large in the middle of the window.
 
-While streaming, the right side of the status bar shows the resolution, frames per second,
+While streaming, the right side of the status bar shows the resolution, the camera's Wi-Fi channel
+(**Wi-Fi: ch 6**, also while disconnected: see *Camera Wi-Fi channel*), frames per second,
 bitrate, **delay** (the longest time a frame spent inside the app in the last second, normally
-10-20 ms), **loss** (video packets that never arrived), **recovered** and **dup** (packets the
-camera sent late or twice) and reconnects.
+10-20 ms), **loss** (video packets that never arrived), **held** (frames held back after a loss)
+and **dup** (packets the camera sent twice), reconnects, and the decoder: **GPU** with the graphics
+adapter's name (e.g. `GPU (Intel(R) Arc(TM) Graphics)`, which GPU on a laptop that has two) or
+**CPU**.
 
 After the first approval, later connections need no taps. **Options → Connect on startup** makes
 the app connect by itself when it starts.
@@ -129,8 +132,8 @@ as a PNG in `Pictures\DJI VCam`.
 
 ## Options
 
-- **Decoder**: *auto* uses your GPU when possible (shown as e.g. `d3d11va (GPU)`), *CPU* forces
-  software decoding.
+- **Decoder**: *auto* uses your GPU when possible (shown as e.g. `decoder: GPU (Intel(R) Arc(TM)
+  Graphics)`; the tooltip names FFmpeg's backend, e.g. d3d11va), *CPU* forces software decoding.
 - **Wake the camera over Bluetooth**: turn off if you bring the camera's Wi-Fi up another way.
 - **Configure the ESP32 USB bridge automatically**: turn off if you connect to the camera's Wi-Fi
   some other way.

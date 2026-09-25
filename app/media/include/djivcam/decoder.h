@@ -44,6 +44,9 @@ public:
 
     // "d3d11va", "vaapi", ... or "software".
     const std::string& backend() const;
+    // The graphics adapter decoding ("Intel(R) Iris(R) Xe Graphics") when the backend tells it
+    // (Windows D3D11VA; on a laptop with two GPUs, which one), else empty.
+    const std::string& gpu() const;
     bool hardware() const;
 
 private:

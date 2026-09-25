@@ -169,7 +169,8 @@ int run_decode_bench(const std::string& path, djivcam::media::DecoderPreference 
     assembler.finish();
 
     djivcam::media::H264Decoder decoder(preference);
-    say("decoder: " + decoder.backend() + ", " + std::to_string(units.size()) + " access units");
+    say("decoder: " + decoder.backend() + (decoder.gpu().empty() ? "" : " on " + decoder.gpu()) + ", " +
+        std::to_string(units.size()) + " access units");
     djivcam::media::Nv12Canvas canvas(1280, 720);
     StepTimer decode("decode + download (NV12)"), webcam("webcam NV12 canvas");
     std::ofstream out;

@@ -43,7 +43,10 @@ private:
     // moves it in its Bluetooth session.
     void chooseWifiChannel();
     void onStats(const LiveStats& stats);
-    void onDecoder(const QString& backend, bool hardware);
+    void onDecoder(const QString& backend, const QString& gpu, bool hardware);
+    // The camera's last known Wi-Fi channel, in the settings and the status bar (0: unknown).
+    void setKnownWifiChannel(int channel);
+    void showWifiChannel();
     void forgetCamera();
     void showStage(const QString& text, bool attention = false);
     // Replaces the video by the status label (not connected, connecting, video lost).
@@ -75,6 +78,7 @@ private:
     QLabel* format_label_;
     QLabel* stats_label_;
     QLabel* decoder_label_;
+    QLabel* wifi_label_;
 
     CameraConnector::Stage connector_stage_ = CameraConnector::Stage::Idle;
     bool streaming_ = false;

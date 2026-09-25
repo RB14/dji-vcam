@@ -26,3 +26,7 @@ add_library(djivcam_media STATIC src/decoder.cpp)
 target_include_directories(djivcam_media PUBLIC include)
 target_compile_definitions(djivcam_media PUBLIC DJIVCAM_HAVE_MEDIA)
 target_link_libraries(djivcam_media PUBLIC ${DJIVCAM_FFMPEG_LIBS})
+if(WIN32)
+    # The D3D11VA device's adapter name (decoder.cpp) includes the Windows headers.
+    target_compile_definitions(djivcam_media PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+endif()

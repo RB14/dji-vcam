@@ -194,7 +194,7 @@ void Pipeline::decode_loop(std::stop_token stop, djivcam::media::DecoderPreferen
         emit errorOccurred(QString::fromUtf8(error.what()));
         return;
     }
-    emit decoderChanged(QString::fromStdString(decoder->backend()), decoder->hardware());
+    emit decoderChanged(QString::fromStdString(decoder->backend()), QString::fromStdString(decoder->gpu()), decoder->hardware());
     Frame last_intact;  // shown while damaged frames are held back
 #ifdef DJIVCAM_HAVE_VCAM
     std::optional<djivcam::media::Nv12Canvas> canvas;  // virtual camera frames, created on first use

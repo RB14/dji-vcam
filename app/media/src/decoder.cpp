@@ -11,6 +11,15 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
+#if defined(_WIN32)
+#include <d3d11.h>  // before the C block below: it declares C++ operators
+#include <dxgi.h>
+#include <wrl/client.h>
+extern "C" {
+#include <libavutil/hwcontext_d3d11va.h>
+}
+#endif
+
 namespace djivcam::media {
 namespace {
 
@@ -40,6 +49,31 @@ AVPixelFormat hw_pixel_format(const AVCodec* codec, AVHWDeviceType type) {
     }
 }
 
+// The name of the graphics adapter a GPU device runs on, when the backend can tell, else empty.
+std::string adapter_name([[maybe_unused]] const AVBufferRef* device, [[maybe_unused]] AVHWDeviceType type) {
+#if defined(_WIN32)
+    if (type == AV_HWDEVICE_TYPE_D3D11VA) {
+        const auto* context = reinterpret_cast<const AVHWDeviceContext*>(device->data);
+        ID3D11Device* d3d = static_cast<const AVD3D11VADeviceContext*>(context->hwctx)->device;
+        Microsoft::WRL::ComPtr<IDXGIDevice> dxgi;
+        Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+        DXGI_ADAPTER_DESC description{};
+        if (FAILED(d3d->QueryInterface(IID_PPV_ARGS(dxgi.GetAddressOf()))) || FAILED(dxgi->GetAdapter(adapter.GetAddressOf())) ||
+            FAILED(adapter->GetDesc(&description))) {
+            return {};
+        }
+        const int size = WideCharToMultiByte(CP_UTF8, 0, description.Description, -1, nullptr, 0, nullptr, nullptr);
+        if (size <= 1) {
+            return {};
+        }
+        std::string name(static_cast<std::size_t>(size - 1), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, description.Description, -1, name.data(), size, nullptr, nullptr);
+        return name;
+    }
+#endif
+    return {};
+}
+
 // Picks the GPU surface format when the decoder offers it (stored in context->opaque).
 AVPixelFormat choose_format(AVCodecContext* context, const AVPixelFormat* offered) {
     const auto wanted = static_cast<AVPixelFormat>(reinterpret_cast<std::intptr_t>(context->opaque));
@@ -62,6 +96,7 @@ struct H264Decoder::Impl {
     SwsContext* scaler = nullptr;
     AVPixelFormat hw_format = AV_PIX_FMT_NONE;
     std::string backend = "software";
+    std::string gpu;
     std::vector<std::uint8_t> input;  // access unit + the zeroed padding FFmpeg requires
 
     ~Impl() { close(); }
@@ -102,6 +137,7 @@ struct H264Decoder::Impl {
         frame = av_frame_alloc();
         downloaded = av_frame_alloc();
         backend = type == AV_HWDEVICE_TYPE_NONE ? "software" : av_hwdevice_get_type_name(type);
+        gpu = type == AV_HWDEVICE_TYPE_NONE ? std::string() : adapter_name(device, type);
         return packet && frame && downloaded;
     }
 
@@ -174,6 +210,8 @@ H264Decoder::H264Decoder(DecoderPreference preference) : impl_(std::make_unique<
 H264Decoder::~H264Decoder() = default;
 
 const std::string& H264Decoder::backend() const { return impl_->backend; }
+
+const std::string& H264Decoder::gpu() const { return impl_->gpu; }
 
 bool H264Decoder::hardware() const { return impl_->device != nullptr; }
 

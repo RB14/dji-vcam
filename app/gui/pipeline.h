@@ -77,7 +77,8 @@ signals:
     void statsUpdated(const LiveStats& stats);
     // Size of the decoded video (changes e.g. 1280x720 -> 960x720 with the camera's aspect ratio).
     void formatChanged(int width, int height);
-    void decoderChanged(const QString& backend, bool hardware);
+    // `gpu`: the graphics adapter's name when the backend tells it, else empty.
+    void decoderChanged(const QString& backend, const QString& gpu, bool hardware);
     void errorOccurred(const QString& message);
     // The camera reported new settings or status (coalesced: call takeCameraState()).
     void cameraChanged();
