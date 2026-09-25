@@ -1,4 +1,4 @@
-# Python (Windows venv, see obs-dji.sh)
+# Python (Windows venv, see dji-vcam.sh)
 .venv/
 __pycache__/
 

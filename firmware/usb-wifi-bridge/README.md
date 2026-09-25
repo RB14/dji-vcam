@@ -48,8 +48,8 @@ only learns a route to the camera subnet and never a default gateway through thi
 ```bash
 . ~/esp/esp-idf/export.sh            # ESP-IDF v5.5
 idf.py build
-../../obs-dji.sh ota-bridge          # update the running bridge over its USB console: no buttons
-../../obs-dji.sh flash-bridge COM3   # full esptool flash; board in download mode (hold BOOT while
+../../dji-vcam.sh ota-bridge          # update the running bridge over its USB console: no buttons
+../../dji-vcam.sh flash-bridge COM3   # full esptool flash; board in download mode (hold BOOT while
                                      # plugging it in, or use the board's "UART" port)
 ```
 

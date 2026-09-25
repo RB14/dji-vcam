@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# obs-dji: entry point for the project's tools.
+# dji-vcam: entry point for the project's tools.
 #
 # The Python tools run on *Windows* Python (from WSL): Bluetooth, the serial ports and the ESP32
 # USB network adapter all live on the Windows host. The venv at .venv is therefore a Windows venv.
 #
-# Usage: ./obs-dji.sh <command> [args]
+# Usage: ./dji-vcam.sh <command> [args]
 #   ble scan|creds [--bridge COMx] [-v]   pair with the camera over BLE, read its AP credentials
 #   bridge [--port COMx] <console cmd>    talk to the ESP32 USB Wi-Fi bridge (status, scan, wifi ...)
 #   live [--seconds N] [-v]               open the camera datalink and try to start the live view

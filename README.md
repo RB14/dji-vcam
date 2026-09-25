@@ -7,11 +7,9 @@ its live preview, instead of the camera's RTMP push.
 > Status (2026-09-25): the Windows app connects with one click (Bluetooth wake, bridge setup,
 > live view), shows H.264 1280x720 at ~30 fps and ~3.5 Mbit/s, decoded on the GPU, with
 > **~135 ms glass-to-glass** latency, and offers it to other apps as the **DJI VCam** webcam. A
-> Camera settings panel exposes Mimo's controls (awaiting its first test on the camera); a Windows
-> installer is built by `app/scripts/package-windows.sh`. Next: Linux and a USB Wi-Fi adapter as
-> the network link. See [docs/app-architecture.md](docs/app-architecture.md) and [docs/tasks.md](docs/tasks.md).
->
-> The repository is still called `obs-dji`; it will be renamed to `dji-vcam`.
+> Camera settings panel exposes Mimo's controls (verified on the camera); a Windows installer is
+> built by `app/scripts/package-windows.sh`. Next: Linux and a USB Wi-Fi adapter as the network
+> link. See [docs/app-architecture.md](docs/app-architecture.md) and [docs/tasks.md](docs/tasks.md).
 
 ## Documentation
 
@@ -51,7 +49,7 @@ its live preview, instead of the camera's RTMP push.
 | `app/` | The desktop app (C++20, Qt 6): `core/` protocol, `ble/` Bluetooth, `media/` GPU decoding, `gui/`, `cli/`, `tests/` |
 | `firmware/usb-wifi-bridge/` | ESP-IDF firmware for the ESP32-S3 USB Wi-Fi bridge (OTA-updatable) |
 | `tools/` | Python research and test tools (the reference implementation) |
-| `obs-dji.sh` | Entry point for the Python tools and bridge flashing |
+| `dji-vcam.sh` | Entry point for the Python tools and bridge flashing |
 | `docs/` | Guides, architecture, protocol notes, reference lists from the Mimo APK |
 
 ## Quick start (developers)
@@ -59,8 +57,8 @@ its live preview, instead of the camera's RTMP push.
 ```bash
 app/scripts/setup-windows-deps.sh                                  # FFmpeg for Windows, once
 app/scripts/build-windows.sh RelWithDebInfo -DDJIVCAM_BUILD_GUI=ON  # app + tests with MSVC
-./obs-dji.sh ota-bridge                                            # update the bridge firmware
-./obs-dji.sh live --play                                           # Python reference live view
+./dji-vcam.sh ota-bridge                                            # update the bridge firmware
+./dji-vcam.sh live --play                                           # Python reference live view
 ```
 
 Details and all prerequisites: [docs/building.md](docs/building.md).

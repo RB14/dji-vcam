@@ -65,7 +65,7 @@ Milestones refer to [app-architecture.md](app-architecture.md).
       - [x] Platform layer (`app/ble/src/central.h`) and Windows backend on C++/WinRT, verified
             with the camera and merged; it really ends the link on disconnect (SimpleBLE did not)
       - [ ] BlueZ backend for Linux (replaces the SimpleBLE stopgap), with the Linux milestone
-- [ ] **Rename** the repository folder and gdrive remote to `dji-vcam` (end of a session)
+- [x] **Rename** the repository folder, gdrive remote and tools wrapper to `dji-vcam` (2026-09-25)
 
 ## Later
 

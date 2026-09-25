@@ -8,7 +8,7 @@ docs/camera-controls.md, plus a battery push. It checks the app's plumbing, not 
 behaviour: the layouts are the documented ones, so a mistake in the documentation is not caught.
 
 Point the app at it with its camera address, e.g.:
-    ./obs-dji.sh fake-camera --video captures/liveview-20260924-223449.bin
+    ./dji-vcam.sh fake-camera --video captures/liveview-20260924-223449.bin
     dji-vcam-cli --camera-ip 127.0.0.1 --seconds 30 --show-messages
 """
 from __future__ import annotations

@@ -6,7 +6,7 @@ The repository has three parts:
 |---|---|---|
 | Desktop app (`dji-vcam`) | C++20, CMake, Qt 6.8, FFmpeg, C++/WinRT (Windows Bluetooth) | `app/` |
 | ESP32-S3 USB Wi-Fi bridge firmware | C, ESP-IDF 5.5 | `firmware/usb-wifi-bridge/` |
-| Research / test tools | Python 3.12 (Windows) | `tools/`, driven by `obs-dji.sh` |
+| Research / test tools | Python 3.12 (Windows) | `tools/`, driven by `dji-vcam.sh` |
 
 ## Desktop app on Windows
 
@@ -98,11 +98,11 @@ The version comes from `project(dji-vcam VERSION ...)` in `app/CMakeLists.txt`.
 
 - `dji-vcam --replay FILE` plays a recorded H.264 stream in a loop at 30 fps instead of connecting,
   through the same decoding, preview and virtual camera path. Recordings come from
-  `dji-vcam-cli --dump FILE` or `./obs-dji.sh live` (`captures/liveview-*.bin`).
+  `dji-vcam-cli --dump FILE` or `./dji-vcam.sh live` (`captures/liveview-*.bin`).
 - `dji-vcam-cli --decode-bench FILE [--decoder auto|gpu|cpu]` decodes a recording as fast as
   possible and prints the cost of each per-frame step; the live view needs under 33 ms per frame.
   On the development laptop (Intel iGPU) a real recording takes about 3 ms (D3D11VA or CPU).
-- `./obs-dji.sh fake-camera --video captures/liveview-<time>.bin` stands in for the camera's side
+- `./dji-vcam.sh fake-camera --video captures/liveview-<time>.bin` stands in for the camera's side
   of the datalink: it streams the recording, answers requests and keeps a small settings state
   with the documented status pushes. Point the app at it with the advanced setting
   `connect/cameraIp` = `127.0.0.1` (registry `HKCU\Software\dji-vcam\dji-vcam\connect`, turn off
@@ -177,11 +177,11 @@ idf.py build
 ```
 
 - **First flash** (or recovery): hold **BOOT** while plugging the board's "USB" port in, then
-  `./obs-dji.sh flash-bridge COM3` (the port of the "USB JTAG/serial debug unit").
-- **Updates** afterwards, with no buttons: `./obs-dji.sh ota-bridge` (sends the image over the
+  `./dji-vcam.sh flash-bridge COM3` (the port of the "USB JTAG/serial debug unit").
+- **Updates** afterwards, with no buttons: `./dji-vcam.sh ota-bridge` (sends the image over the
   bridge's USB console; unconfirmed images roll back automatically).
 
 ## Python tools
 
-`./obs-dji.sh` creates a Windows virtual environment in `.venv`, installs `requirements.txt` and
-dispatches to the tools (`./obs-dji.sh help`). `./obs-dji.sh test` runs the Python unit tests.
+`./dji-vcam.sh` creates a Windows virtual environment in `.venv`, installs `requirements.txt` and
+dispatches to the tools (`./dji-vcam.sh help`). `./dji-vcam.sh test` runs the Python unit tests.
