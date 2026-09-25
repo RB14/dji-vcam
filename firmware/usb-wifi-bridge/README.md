@@ -36,7 +36,9 @@ only learns a route to the camera subnet and never a default gateway through thi
   beacon.
 - Full-Speed USB is the bottleneck (the camera's live view is ~2.7 Mbit/s with keyframe bursts). The
   Wi-Fi RX callback only queues frames; a pump in the TinyUSB task packs them into 6 x 3.2 KB NCM
-  transfer blocks, so bursts are buffered instead of dropped. `status` shows drops.
+  transfer blocks, so bursts are buffered instead of dropped. `status` shows drops and the queue's
+  peak. Queued frames keep their Wi-Fi driver RX buffer, so the driver has 256 of them, in the
+  board's PSRAM (firmware 0.4.0): with 64, keyframe bursts made it discard frames silently.
 
 ## Build and flash
 

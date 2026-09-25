@@ -61,7 +61,10 @@ typedef struct {
     esp_err_t result;
 } usb_tx_packet_t;
 
-#define TX_QUEUE_DEPTH          48
+/* Every queued frame holds one of the Wi-Fi driver's dynamic RX buffers until USB takes it, so the
+ * driver needs more of those than this (sdkconfig: CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM, in PSRAM):
+ * otherwise a short USB stall during a keyframe burst makes the driver discard frames silently. */
+#define TX_QUEUE_DEPTH          160
 #define PUMP_REPLY_TIMEOUT_MS   5
 #define PUMP_TASK_PRIORITY      10
 #define PUMP_DONE               1
@@ -135,6 +138,11 @@ static esp_err_t wifi_to_usb(void *buffer, uint16_t len, void *eb)
     if (!tud_mounted() || xQueueSend(s_tx_queue, &packet, 0) != pdTRUE) {
         s_stats.to_host_dropped++;
         esp_wifi_internal_free_rx_buffer(eb);
+        return ESP_OK;
+    }
+    const UBaseType_t queued = uxQueueMessagesWaiting(s_tx_queue);
+    if (queued > s_stats.tx_queue_peak) {
+        s_stats.tx_queue_peak = queued;
     }
     return ESP_OK;
 }

@@ -20,6 +20,7 @@ typedef struct {
     uint64_t to_wifi_bytes;
     uint32_t to_wifi_dropped;
     uint32_t tx_queued;      /* frames waiting for USB right now */
+    uint32_t tx_queue_peak;  /* most frames ever waiting at once (each holds a Wi-Fi RX buffer) */
     uint32_t pump_runs;      /* USB pump invocations */
     uint32_t pump_blocked;   /* pumps that found every NCM transfer block in flight */
     uint32_t pump_lost;      /* pump requests that never reported back (re-issued) */

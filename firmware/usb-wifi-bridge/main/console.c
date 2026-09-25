@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -264,10 +265,12 @@ static void cmd_status(void)
     con_printf("to wifi: %lu frames %llu bytes, %lu dropped\n",
                (unsigned long)stats.to_wifi_frames, (unsigned long long)stats.to_wifi_bytes,
                (unsigned long)stats.to_wifi_dropped);
-    con_printf("usb pump: %lu runs, %lu blocked, %lu lost, %lu queued\n",
+    con_printf("usb pump: %lu runs, %lu blocked, %lu lost, %lu queued (peak %lu)\n",
                (unsigned long)stats.pump_runs, (unsigned long)stats.pump_blocked,
-               (unsigned long)stats.pump_lost, (unsigned long)stats.tx_queued);
-    con_printf("heap: %lu free\n", (unsigned long)esp_get_free_heap_size());
+               (unsigned long)stats.pump_lost, (unsigned long)stats.tx_queued, (unsigned long)stats.tx_queue_peak);
+    con_printf("heap: %lu free (internal %lu, PSRAM %lu)\n", (unsigned long)esp_get_free_heap_size(),
+               (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+               (unsigned long)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 
 static void run_command(char *line)
