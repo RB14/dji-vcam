@@ -11,7 +11,8 @@ add_library(djivcam_core STATIC
     src/session.cpp
     src/wifi_channel.cpp
 )
-target_include_directories(djivcam_core PUBLIC include)
+target_include_directories(djivcam_core PUBLIC include "${CMAKE_CURRENT_BINARY_DIR}/include")
+configure_file(include/djivcam/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/include/djivcam/version.h" @ONLY)
 
 find_package(Threads REQUIRED)
 target_link_libraries(djivcam_core PUBLIC Threads::Threads)

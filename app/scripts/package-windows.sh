@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Packages the Windows app into binaries/ (git-ignored):
-#   dji-vcam-<version>-win64.zip     portable folder
-#   dji-vcam-setup-<version>.exe     installer (when Inno Setup 6 is installed:
+#   dji-vcam-<version>-x64.zip       portable folder
+#   dji-vcam-setup-<version>-x64.exe installer (when Inno Setup 6 is installed:
 #                                    winget install JRSoftware.InnoSetup --scope user)
+# <version> is the full version of the checkout (scripts/version.sh): "0.1.0" from the release tag,
+# "0.1.0-dev+g<commit>" otherwise.
 #
 # Builds the Release configuration with app/scripts/build-windows.sh, then collects the app folder
 # (Qt runtime, FFmpeg and Visual C++ runtime DLLs are already deployed next to the exe), the CLI,
@@ -15,7 +17,8 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_DIR="$(cd "$APP_DIR/.." && pwd)"
 VERSION="$(sed -n 's/^project(dji-vcam VERSION \([0-9.]*\).*/\1/p' "$APP_DIR/CMakeLists.txt")"
-NAME="dji-vcam-$VERSION-win64"
+VERSION_FULL="$("$APP_DIR/scripts/version.sh")"
+NAME="dji-vcam-$VERSION_FULL-x64"
 
 win_env() { powershell.exe -NoProfile -Command "\$env:$1" | tr -d '\r'; }
 WIN_ROOT="${DJIVCAM_WIN_ROOT:-$(win_env USERPROFILE)\\.dji-vcam}"  # as in build-windows.sh
@@ -68,7 +71,7 @@ if [ -z "$ISCC" ]; then
     echo "Inno Setup 6 not found: skipping the installer (winget install JRSoftware.InnoSetup --scope user)"
     exit 0
 fi
-"$ISCC" /Q "/DAppVersion=$VERSION" "/DSourceDir=$(wslpath -w "$OUT")" "/DOutputDir=$(wslpath -w "$REPO_DIR/binaries")" \
+"$ISCC" /Q "/DAppVersion=$VERSION_FULL" "/DAppNumericVersion=$VERSION" "/DSourceDir=$(wslpath -w "$OUT")" "/DOutputDir=$(wslpath -w "$REPO_DIR/binaries")" \
     "$(wslpath -w "$APP_DIR/packaging/windows/dji-vcam.iss")"
-SETUP="binaries/dji-vcam-setup-$VERSION.exe"
+SETUP="binaries/dji-vcam-setup-$VERSION_FULL-x64.exe"
 echo "Packaged: $SETUP ($(du -h "$REPO_DIR/$SETUP" | cut -f1))"

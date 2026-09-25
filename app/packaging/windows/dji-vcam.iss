@@ -1,7 +1,9 @@
 ; Windows installer for DJI VCam (Inno Setup 6).
 ;
 ; Built by app/scripts/package-windows.sh from the packaged app folder:
-;   ISCC.exe /DAppVersion=0.1.0 /DSourceDir=<app folder> /DOutputDir=<binaries> dji-vcam.iss
+;   ISCC.exe /DAppVersion=0.1.0 /DAppNumericVersion=0.1.0 /DSourceDir=<app folder> /DOutputDir=<binaries> dji-vcam.iss
+; AppVersion is the full version (0.1.0, or 0.1.0-dev+g<commit> between releases); AppNumericVersion
+; its MAJOR.MINOR.PATCH, for the installer's own version resource.
 ;
 ; Installs the app into Program Files, registers the virtual camera's media source from there (the
 ; Windows camera services can read Program Files, so the app never has to ask for administrator
@@ -11,6 +13,9 @@
 
 #ifndef AppVersion
   #error Define AppVersion, e.g. /DAppVersion=0.1.0
+#endif
+#ifndef AppNumericVersion
+  #error Define AppNumericVersion, e.g. /DAppNumericVersion=0.1.0
 #endif
 #ifndef SourceDir
   #error Define SourceDir, the packaged app folder
@@ -41,7 +46,12 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; Media Foundation virtual cameras (MFCreateVirtualCamera) exist from Windows 11 on.
 MinVersion=10.0.22000
 OutputDir={#OutputDir}
-OutputBaseFilename=dji-vcam-setup-{#AppVersion}
+OutputBaseFilename=dji-vcam-setup-{#AppVersion}-x64
+VersionInfoVersion={#AppNumericVersion}
+VersionInfoProductTextVersion={#AppVersion}
+AppPublisherURL=https://github.com/RB14/dji-vcam
+AppSupportURL=https://github.com/RB14/dji-vcam/issues
+AppUpdatesURL=https://github.com/RB14/dji-vcam/releases
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

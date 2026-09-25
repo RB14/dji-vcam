@@ -7,6 +7,7 @@
 
 #include <mutex>
 
+#include "djivcam/version.h"
 #include "main_window.h"
 
 namespace {
@@ -51,12 +52,14 @@ int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("dji-vcam"));
     QApplication::setOrganizationName(QStringLiteral("dji-vcam"));
+    QApplication::setApplicationVersion(QString::fromUtf8(djivcam::kVersion));
     open_log();
     qInfo("DJI VCam %s started", qPrintable(QApplication::applicationVersion()));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("DJI Osmo Action live view"));
     parser.addHelpOption();
+    parser.addVersionOption();
     const QCommandLineOption connect_option(QStringLiteral("connect"), QStringLiteral("Connect to the camera on startup."));
     parser.addOption(connect_option);
     const QCommandLineOption identifier_option(

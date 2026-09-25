@@ -1,5 +1,6 @@
 add_executable(dji-vcam-cli main.cpp)
 target_link_libraries(dji-vcam-cli PRIVATE djivcam_core)
+djivcam_add_version_resource(dji-vcam-cli "DJI VCam command-line tool")
 if(TARGET djivcam_ble)
     target_link_libraries(dji-vcam-cli PRIVATE djivcam_ble)
 endif()

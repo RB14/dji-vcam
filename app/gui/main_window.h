@@ -48,6 +48,7 @@ private:
     void setKnownWifiChannel(int channel);
     void showWifiChannel();
     void forgetCamera();
+    void showAbout();
     void showStage(const QString& text, bool attention = false);
     // Replaces the video by the status label (not connected, connecting, video lost).
     void showStatusView();

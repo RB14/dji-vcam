@@ -21,6 +21,8 @@ WIN_ROOT="${DJIVCAM_WIN_ROOT:-$(win_env USERPROFILE)\\.dji-vcam}"
 QT_DIR="${QT_DIR:-$(win_env USERPROFILE)\\Qt\\6.8.3\\msvc2022_64}"
 FFMPEG_DIR="${FFMPEG_DIR:-$WIN_ROOT\\deps\\ffmpeg}"
 SRC_WIN="$WIN_ROOT\\src"
+# The mirror below has no git history: pass the version from here (scripts/version.sh).
+VERSION_FULL="$("$APP_DIR/scripts/version.sh")"
 BUILD_WIN="$WIN_ROOT\\build"
 
 # Mirror the sources (no build trees).
@@ -32,7 +34,7 @@ powershell.exe -NoProfile -Command "
     # PATH as currently configured (the one inherited through WSL can predate tool installs)
     \$env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
     cmake -S '$SRC_WIN' -B '$BUILD_WIN' -G 'Visual Studio 17 2022' -A x64 \`
-        -DCMAKE_PREFIX_PATH='$QT_DIR' -DFFMPEG_DIR='$FFMPEG_DIR' $* | Out-Host
+        -DCMAKE_PREFIX_PATH='$QT_DIR' -DFFMPEG_DIR='$FFMPEG_DIR' -DDJIVCAM_VERSION='$VERSION_FULL' $* | Out-Host
     if (\$LASTEXITCODE) { exit \$LASTEXITCODE }
     cmake --build '$BUILD_WIN' --config $CONFIG --parallel | Out-Host
     if (\$LASTEXITCODE) { exit \$LASTEXITCODE }

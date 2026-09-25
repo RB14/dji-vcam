@@ -26,6 +26,7 @@ add_library(djivcam-source SHARED
     windows/source/djivcam-source.def
 )
 target_include_directories(djivcam-source PRIVATE windows/source include)
+djivcam_add_version_resource(djivcam-source "DJI VCam webcam (Media Foundation media source)")
 target_compile_definitions(djivcam-source PRIVATE UNICODE _UNICODE)
 # Loaded by a Windows service on any machine: do not depend on the VC++ runtime being installed.
 set_property(TARGET djivcam-source PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

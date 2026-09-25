@@ -155,6 +155,8 @@ MainWindow::MainWindow(QWidget* parent)
     }
     options->addSeparator();
     connect(options->addAction(tr("Forget the paired camera")), &QAction::triggered, this, &MainWindow::forgetCamera);
+    options->addSeparator();
+    connect(options->addAction(tr("About DJI VCam")), &QAction::triggered, this, &MainWindow::showAbout);
     auto* options_button = new QToolButton(this);
     options_button->setText(tr("Options"));
     options_button->setMenu(options);
@@ -346,6 +348,16 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::connectCamera() { connect_action_->setChecked(true); }
+
+void MainWindow::showAbout() {
+    QMessageBox::about(this, tr("About DJI VCam"),
+                       tr("<p><b>DJI VCam</b> %1</p>"
+                          "<p>A DJI Osmo Action camera's live view as a wireless webcam.</p>"
+                          "<p><a href=\"https://github.com/RB14/dji-vcam\">github.com/RB14/dji-vcam</a> · MIT License</p>"
+                          "<p>DJI, Osmo and Mimo are trademarks of SZ DJI Technology Co., Ltd. "
+                          "This project is not affiliated with or endorsed by DJI.</p>")
+                           .arg(QApplication::applicationVersion().toHtmlEscaped()));
+}
 
 void MainWindow::replayFile(const QString& path) {
     replay_file_ = path;

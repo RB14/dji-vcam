@@ -1,6 +1,7 @@
 // dji-vcam-cli: runs the camera connection without the GUI and prints its progress.
 //
 // Usage: dji-vcam-cli [--ble] [--seconds N] [--identifier-file PATH] [--dump PATH]
+//        dji-vcam-cli --version        print the version
 //        dji-vcam-cli --vcam-test N    publish a test pattern to the DJI VCam webcam for N seconds
 //        dji-vcam-cli --list-cameras   list the cameras apps can see
 //        dji-vcam-cli --vcam-register  register the DJI VCam webcam for all users, for good
@@ -52,6 +53,7 @@
 #include "djivcam/camera_controller.h"
 #include "djivcam/camera_model.h"
 #include "djivcam/session.h"
+#include "djivcam/version.h"
 
 #ifdef DJIVCAM_HAVE_BLE
 #include "djivcam/camera_ble.h"
@@ -338,7 +340,10 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         const std::string flag = argv[i];
         const bool has_value = i + 1 < argc;
-        if (flag == "--ble") {
+        if (flag == "--version") {
+            std::printf("dji-vcam-cli %s\n", djivcam::kVersion);
+            return 0;
+        } else if (flag == "--ble") {
             use_ble = true;
         } else if (flag == "--ble-scan" && has_value) {
             ble_scan_seconds = std::stoi(argv[++i]);

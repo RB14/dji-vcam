@@ -1,0 +1,9 @@
+// The build's version (cmake/DjiVcamVersion.cmake), generated into the build tree.
+#pragma once
+
+namespace djivcam {
+
+// "0.1.0" for a release build, "0.1.0-dev+g1a2b3c4" (".dirty" with uncommitted changes) otherwise.
+inline constexpr const char* kVersion = "@DJIVCAM_VERSION_FULL@";
+
+}  // namespace djivcam

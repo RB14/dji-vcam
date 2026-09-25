@@ -12,12 +12,8 @@ qt_add_executable(dji-vcam WIN32
 )
 target_link_libraries(dji-vcam PRIVATE Qt6::Widgets Qt6::OpenGLWidgets Qt6::SerialPort djivcam_core djivcam_ble djivcam_media)
 
-if(WIN32)
-    # App icon (resources/dji-vcam.svg, rendered by scripts/make-icon.sh) and version info.
-    set(DJIVCAM_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/dji-vcam.ico")
-    configure_file(resources/dji-vcam.rc.in dji-vcam.rc @ONLY)
-    target_sources(dji-vcam PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/dji-vcam.rc")
-endif()
+# App icon (resources/dji-vcam.svg, rendered by scripts/make-icon.sh) and version info.
+djivcam_add_version_resource(dji-vcam "DJI VCam" ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/dji-vcam.ico")
 
 if(TARGET djivcam_vcam)
     target_link_libraries(dji-vcam PRIVATE djivcam_vcam)

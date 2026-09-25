@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+include(cmake/DjiVcamVersion.cmake)
+
 option(DJIVCAM_BUILD_TESTS "Build the unit tests" ON)
 option(DJIVCAM_BUILD_GUI "Build the Qt desktop app" OFF)
 option(DJIVCAM_WITH_BLE "Build Bluetooth LE support (WinRT on Windows, SimpleBLE on Linux)" ${DJIVCAM_BUILD_GUI})
