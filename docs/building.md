@@ -134,6 +134,7 @@ Connection experiments: `--reconnect-test 3,10,30` drops the session after strea
 silent for each number of seconds and reports whether video comes back; `--ble-hold` keeps the
 Bluetooth link open after the wake (the app hangs up, see protocol-notes.md 3.11);
 `--ble-release-test` times how long the camera takes to advertise again after a hang-up;
+`--wifi-channel N` moves the camera's access point to 2.4 GHz channel N;
 `--no-answer` / `--ble-answer` change whether the camera's own requests are answered on the
 datalink / over Bluetooth. The app writes a log to `%LOCALAPPDATA%\dji-vcam\dji-vcam\logs`
 (the previous run is kept as `dji-vcam.previous.log`).

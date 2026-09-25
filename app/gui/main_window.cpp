@@ -1,6 +1,7 @@
 #include "main_window.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QComboBox>
 #include <QDockWidget>
@@ -15,6 +16,7 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QSignalBlocker>
+#include <QThread>
 #include <QToolButton>
 
 #include <algorithm>
@@ -30,6 +32,7 @@
 #include "bridge_link.h"
 #include "camera_panel.h"
 #include "djivcam/camera_ble.h"
+#include "djivcam/wifi_channel.h"
 #include "pipeline.h"
 #include "preview_widget.h"
 
@@ -46,6 +49,10 @@ const QString kIdentifierKey = QStringLiteral("camera/identifier");
 const QString kAddressKey = QStringLiteral("camera/address");
 const QString kBluetoothKey = QStringLiteral("connect/wakeOverBluetooth");
 const QString kBridgeKey = QStringLiteral("connect/configureBridge");
+// The camera's Wi-Fi channel: 0 automatic (the quietest the bridge hears), -1 leave it, else 1/6/11.
+const QString kWifiChannelKey = QStringLiteral("connect/wifiChannel");
+const QString kCameraChannelKey = QStringLiteral("camera/wifiChannel");  // last known, 0 unknown
+const QString kCameraSsidKey = QStringLiteral("camera/ssid");
 const QString kStartupKey = QStringLiteral("connect/onStartup");
 const QString kDecoderKey = QStringLiteral("video/decoder");
 const QString kVirtualCameraKey = QStringLiteral("vcam/enabled");
@@ -124,6 +131,22 @@ MainWindow::MainWindow(QWidget* parent)
                                       settings_, kHoldOnLossKey, false);  // real time first
     pipeline_->setHoldOnLoss(hold_action->isChecked());
     connect(hold_action, &QAction::toggled, this, [this](bool on) { pipeline_->setHoldOnLoss(on); });
+    QMenu* channel_menu = options->addMenu(tr("Camera Wi-Fi channel"));
+    auto* channels = new QActionGroup(channel_menu);
+    const int channel_choice = settings_->value(kWifiChannelKey, 0).toInt();
+    for (const auto& [value, text] : {std::pair{0, tr("Automatic: the quietest the bridge hears")}, std::pair{1, tr("Channel 1")},
+                                      std::pair{6, tr("Channel 6")}, std::pair{11, tr("Channel 11")},
+                                      std::pair{-1, tr("Leave it as the camera has it")}}) {
+        QAction* action = channel_menu->addAction(text);
+        action->setCheckable(true);
+        action->setChecked(value == channel_choice);
+        channels->addAction(action);
+        connect(action, &QAction::triggered, this, [this, value] {
+            settings_->setValue(kWifiChannelKey, value);
+            channel_scanned_ = false;  // a new automatic choice may scan again
+            statusBar()->showMessage(tr("The camera's Wi-Fi channel changes at the next Connect"), 6000);
+        });
+    }
     options->addSeparator();
     connect(options->addAction(tr("Forget the paired camera")), &QAction::triggered, this, &MainWindow::forgetCamera);
     auto* options_button = new QToolButton(this);
@@ -185,6 +208,10 @@ MainWindow::MainWindow(QWidget* parent)
     });
     connect(connector_, &CameraConnector::stageChanged, this, &MainWindow::onConnectorStage);
     connect(connector_, &CameraConnector::wifiReady, this, &MainWindow::onWifiReady);
+    connect(connector_, &CameraConnector::wifiChannelChanged, this, [this](int channel) {
+        settings_->setValue(kCameraChannelKey, channel);
+        statusBar()->showMessage(tr("The camera's Wi-Fi moved to channel %1").arg(channel), 8000);
+    });
     connect(connector_, &CameraConnector::cameraFound, this, [this](const QString& name, const QString& address) {
         camera_label_->setText(tr("Camera: %1").arg(name));
         settings_->setValue(kAddressKey, address);
@@ -288,6 +315,10 @@ void MainWindow::updateVirtualCameraStatus() {
 }
 
 MainWindow::~MainWindow() {
+    if (channel_scan_) {
+        channel_scan_->wait();  // it posts its result to this window
+        delete channel_scan_;
+    }
     connector_->stop();
     camera_panel_->setController(nullptr);  // the controller goes away with the pipeline's session
     pipeline_->stop();
@@ -360,6 +391,7 @@ void MainWindow::toggleConnection(bool connect) {
     camera_panel_->setController(pipeline_->camera());
     if (bluetooth_action_->isChecked()) {
         if (CameraConnector::bluetoothAvailable()) {
+            chooseWifiChannel();
             connector_->start(pairingIdentifier(), kPairingToken, settings_->value(kAddressKey).toString());
         } else {
             showStage(tr("Bluetooth is off or missing: join the camera's Wi-Fi another way"), true);
@@ -400,9 +432,59 @@ void MainWindow::onConnectorStage(Stage stage, const QString& detail) {
     }
 }
 
+void MainWindow::chooseWifiChannel() {
+    const int choice = settings_->value(kWifiChannelKey, 0).toInt();
+    const int known = settings_->value(kCameraChannelKey, 0).toInt();
+    if (choice > 0) {
+        if (choice != known) {
+            qInfo("wifi channel: moving the camera to channel %d (last known %d)", choice, known);
+            connector_->setWifiChannel(choice);
+        }
+        return;
+    }
+    if (choice < 0 || channel_scanned_ || !bridge_action_->isChecked()) {
+        return;
+    }
+    channel_scanned_ = true;
+    const std::string ssid = settings_->value(kCameraSsidKey).toString().toStdString();
+    // Meanwhile the connector searches and pairs; the result usually arrives before its wake. A
+    // QThread: the serial port needs one.
+    delete channel_scan_;
+    channel_scan_ = QThread::create([this, ssid, known] {
+        QString error;
+        const auto networks = BridgeLink::scan(&error);
+        QMetaObject::invokeMethod(this, [this, networks, error, ssid, known] {
+            if (!networks) {
+                qInfo("wifi channel: no scan (%s)", qPrintable(error));
+                return;
+            }
+            int current = known;
+            for (const auto& network : *networks) {
+                if (!ssid.empty() && network.ssid == ssid) {
+                    current = network.channel;  // the camera's access point is up: its actual channel
+                }
+            }
+            if (current != known) {
+                settings_->setValue(kCameraChannelKey, current);
+            }
+            const int best = djivcam::wifi::quietest_channel(*networks, ssid, current);
+            qInfo("wifi channel: %d networks heard, the camera on %d: %s", static_cast<int>(networks->size()), current,
+                  best ? qPrintable(QStringLiteral("moving it to %1").arg(best)) : "staying");
+            if (best) {
+                connector_->setWifiChannel(best);
+            }
+        }, Qt::QueuedConnection);
+    });
+    channel_scan_->start();
+}
+
 void MainWindow::onWifiReady(const QString& ssid, const QString& password) {
+    settings_->setValue(kCameraSsidKey, ssid);
     if (streaming_) {
         return;  // a Bluetooth reconnect while video flows: the network and the bridge are fine
+    }
+    if (channel_scan_) {
+        channel_scan_->wait();  // it holds the bridge's console
     }
     // From now on the camera's network should appear: if it does not within kRewakeAfterMs, the
     // camera is woken again (checked in onStats()).

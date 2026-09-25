@@ -8,6 +8,7 @@ add_library(djivcam_core STATIC
     src/camera_controller.cpp
     src/camera_protocol.cpp
     src/session.cpp
+    src/wifi_channel.cpp
 )
 target_include_directories(djivcam_core PUBLIC include)
 

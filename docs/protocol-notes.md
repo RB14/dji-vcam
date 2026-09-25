@@ -413,6 +413,21 @@ datalink connection while a Bluetooth session is open, and after hanging up it w
 camera has noticed (it advertises again, ~3.1-3.6 s) before the datalink may connect: a live view
 started just before the camera drops the Bluetooth session dies with it.
 
+### 3.12 The camera's Wi-Fi channel [VERIFIED 2026-09-25]
+
+- **`0x07/0x2B` (set_wifi_frequency) moves the camera's 2.4 GHz access point**: payload the channel
+  as a **u16 little-endian** (`01 00` = channel 1), answer `00`. A one-byte payload answers `ff`,
+  an empty one `ff`. The access point restarts on the new channel (the bridge re-associates within
+  ~2 s) and the camera keeps the channel afterwards.
+- Send it over Bluetooth before the live view starts. Over the datalink during a live view it also
+  moved the access point (no answer: it restarts at once), but no video came back afterwards.
+- `0x07/0x44` (get_frequency) answers `00 00 01`: the band, not the channel; `0x07/0x10` sets the
+  band (what DJI Mimo exposes, 2.4 / 5 GHz). `0x07/0x19` answers the country code (`ff` "FI").
+- Why it matters: one evening the camera sat on channel 10 next to busy networks on 9, 11 and 13;
+  the live view fell to a few fps and the bridge failed to send its acks (`to wifi ... dropped`).
+  On channel 1 the same setup gave a steady 3.7 Mbit/s with no loss. A scan cannot see how busy a
+  network is, only how loud: channel 10 carried only 1.3 times channel 1's interference.
+
 ## 4. Verified A5P video alternative: RTMP push over BLE (Moblin)
 
 [V-A5P per Moblin code comments: "Patch for OA5P …" (`DjiDevice.swift:415-425`); model-specific configure byte `0x1A` for A5P/360 (`:340-349`); `hasNewProtocol()` = true for A5P (`SettingsDjiDevice.swift:80-101`)]

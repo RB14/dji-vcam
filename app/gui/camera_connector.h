@@ -32,9 +32,14 @@ public:
     void stop();
     // Connects and wakes the camera's Wi-Fi again (e.g. its access point went away).
     void wakeAgain() { wake_requested_ = true; }
+    // Moves the camera's access point to this 2.4 GHz channel in the next Bluetooth session, before
+    // the video connection starts (0: leave it). The camera keeps it afterwards.
+    void setWifiChannel(int channel) { wifi_channel_ = channel; }
 
 signals:
     void stageChanged(CameraConnector::Stage stage, const QString& detail);
+    // The camera accepted a move of its access point to `channel`.
+    void wifiChannelChanged(int channel);
     void cameraFound(const QString& name, const QString& address);
     // The camera's access point is up; credentials to give the network link (e.g. the ESP32 bridge).
     void wifiReady(const QString& ssid, const QString& password);
@@ -44,4 +49,5 @@ private:
 
     std::jthread worker_;
     std::atomic<bool> wake_requested_{false};
+    std::atomic<int> wifi_channel_{0};
 };

@@ -9,6 +9,7 @@
 class QAction;
 class CameraPanel;
 class QStackedWidget;
+class QThread;
 class QComboBox;
 class QLabel;
 class QSettings;
@@ -38,6 +39,9 @@ private:
     void onSessionState(const QString& state, const QString& detail);
     void onConnectorStage(CameraConnector::Stage stage, const QString& detail);
     void onWifiReady(const QString& ssid, const QString& password);
+    // Picks the camera's Wi-Fi channel for this Connect (Options: automatic or fixed); the connector
+    // moves it in its Bluetooth session.
+    void chooseWifiChannel();
     void onStats(const LiveStats& stats);
     void onDecoder(const QString& backend, bool hardware);
     void forgetCamera();
@@ -76,5 +80,7 @@ private:
     bool streaming_ = false;
     QString replay_file_;  // set: "Connect" replays this file instead
     QElapsedTimer network_missing_;  // how long the session has been waiting for the camera network
+    bool channel_scanned_ = false;       // the automatic channel choice scans once per app run
+    QThread* channel_scan_ = nullptr;    // the bridge scan behind it (it uses the bridge's console)
     unsigned stats_seconds_ = 0;     // for a stats line in the log every 10 s
 };

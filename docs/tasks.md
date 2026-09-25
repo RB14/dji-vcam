@@ -48,10 +48,9 @@ Milestones refer to [app-architecture.md](app-architecture.md).
 
 ## Next
 
-- [ ] **Camera Wi-Fi channel**: the camera's AP sat on a crowded channel (10) one evening and the
-      live view slowed to a few fps (the bridge could not get its acks out). The bridge's `scan`
-      sees the neighbours; move the camera to the quietest 2.4 GHz channel. `07/44` get_frequency
-      answers `00 00 01`, country code `07/19` "FI"; `07/2B` set_wifi_frequency is untested
+- [x] **Camera Wi-Fi channel**: `07/2B` moves the camera's access point (protocol-notes.md 3.12);
+      Options → Camera Wi-Fi channel (automatic from the bridge's scan, or 1 / 6 / 11), applied in
+      the Bluetooth session before the live view; `dji-vcam-cli --ble --wifi-channel N`
 - [~] **Webcam pacing**: the media source handed out a sample whenever asked (Chrome measured
       52 fps on a 30 fps camera, repeated frames); it now waits for the app's next frame. To check
       in Chrome once installed

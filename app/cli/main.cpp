@@ -10,6 +10,7 @@
 //        dji-vcam-cli --decode-bench FILE [--decoder auto|gpu|cpu] [--frames-out FILE.nv12]
 //                                      time each per-frame step of the live view on a recorded stream
 //   --ble              wake the camera's Wi-Fi over Bluetooth first, then hang up, as DJI Mimo does
+//   --wifi-channel N   with --ble: move the camera's access point to 2.4 GHz channel N (it keeps it)
 //   --ble-hold         with --ble: keep the Bluetooth link open (the app's behaviour before
 //                      2026-09-25; the camera then sends no video after a short power-off)
 //   --identifier-file  file holding the approved pairing identifier (never printed)
@@ -324,6 +325,7 @@ int main(int argc, char* argv[]) {
     bool no_answer = false;
     [[maybe_unused]] bool ble_answer = false;
     [[maybe_unused]] bool ble_hold = false;
+    [[maybe_unused]] int wifi_channel = 0;
     [[maybe_unused]] bool ble_release_test = false;
     bool show_all_messages = false;  // including the replies to the session's keep-alives
     bool follow_camera = false;
@@ -376,6 +378,8 @@ int main(int argc, char* argv[]) {
             ble_sends.push_back(*spec);
         } else if (flag == "--no-answer") {
             no_answer = true;
+        } else if (flag == "--wifi-channel" && has_value) {
+            wifi_channel = std::stoi(argv[++i]);
         } else if (flag == "--ble-hold") {
             ble_hold = true;
         } else if (flag == "--ble-answer") {
@@ -538,6 +542,11 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         say("camera Wi-Fi is up: '" + credentials->ssid + "' (password not shown)");
+        if (wifi_channel > 0) {  // before the live view: a move during one leaves it without video
+            const auto reply = camera->request(djivcam::duml::kAddrWifi, 0x07, 0x2B,
+                                               {static_cast<std::uint8_t>(wifi_channel), 0x00}, 3s);
+            say("camera Wi-Fi channel " + std::to_string(wifi_channel) + ": " + (reply ? reply->describe() : "no reply"));
+        }
         for (const SendSpec& spec : ble_sends) {
             const std::string what = djivcam::duml::Frame{djivcam::duml::kAddrApp, spec.receiver, 0, djivcam::duml::kFlagRequest,
                                                           spec.cmd_set, spec.cmd_id, spec.payload}

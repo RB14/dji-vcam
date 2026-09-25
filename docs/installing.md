@@ -82,6 +82,15 @@ To remove what the portable app installed, run `dji-vcam-cli --vcam-unregister` 
 folder, then in an administrator prompt `regsvr32 /u "C:\ProgramData\DJI VCam\djivcam-source.dll"`
 and delete that folder. (The installer's uninstaller does all of it by itself.)
 
+## Camera Wi-Fi channel
+
+The camera's own Wi-Fi uses one 2.4 GHz channel, which it keeps. *Options → Camera Wi-Fi channel*
+chooses it at the next Connect: **Automatic** (default) lets the ESP32 bridge listen to the networks
+around it once per app start and moves the camera to the quietest of channels 1, 6 and 11 when that
+is clearly quieter; or pick **1**, **6** or **11** yourself if the video stutters on a busy channel
+(a scan hears how loud the neighbours are, not how busy). Moving the channel adds about 3 s to that
+Connect.
+
 ## Camera settings
 
 The **Camera settings** panel on the right (toolbar: *Camera settings* shows or hides it) works
@@ -138,6 +147,7 @@ as a PNG in `Pictures\DJI VCam`.
 | Camera switched off and on | Nothing to do: the app finds and wakes it again and the video returns about 15 s after the camera is on (the app uses Bluetooth only to wake the camera, then hangs up, as DJI Mimo does) |
 | "The camera sent no video, connecting again" | Usually recovers by itself; the camera may be in a menu or playback screen |
 | Occasional noise | Wi-Fi interference on 2.4 GHz; keep the bridge and camera close and away from routers |
+| Video slow or stuttering although the camera is close | A busy neighbouring network on the camera's channel: *Options → Camera Wi-Fi channel* → pick 1, 6 or 11, then Disconnect / Connect (the camera keeps the channel) |
 | Seconds of lag, jerky video | If **delay** stays small, the lag builds up on the radio link or in the camera, usually with a high **loss**: move the bridge closer to the camera and away from routers, then Disconnect / Connect |
 | Webcam picture is dark gray | The app is not streaming: start it and connect |
 | DJI VCam missing in an app | `dji-vcam-cli --list-cameras` lists what apps can see; restart the other app so it lists cameras again |

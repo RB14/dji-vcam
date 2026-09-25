@@ -14,6 +14,7 @@ add_executable(djivcam_tests
     request_tracker_test.cpp
     camera_controller_test.cpp
     camera_protocol_test.cpp
+    wifi_channel_test.cpp
 )
 target_link_libraries(djivcam_tests PRIVATE djivcam_core GTest::gtest_main)
 

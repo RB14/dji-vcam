@@ -5,6 +5,9 @@
 #include <QString>
 
 #include <optional>
+#include <vector>
+
+#include "djivcam/wifi_channel.h"
 
 class BridgeLink {
 public:
@@ -14,4 +17,9 @@ public:
     // Gives the bridge the camera AP credentials unless it already has them. Returns false when
     // no bridge is connected or it does not answer. `error` receives a human-readable reason.
     static bool ensureCredentials(const QString& ssid, const QString& password, QString* error);
+
+    // The 2.4 GHz networks the bridge hears (its `scan` command, a few seconds). Blocking: call it
+    // off the UI thread, and not while video streams (the bridge leaves the camera's channel
+    // briefly to scan).
+    static std::optional<std::vector<djivcam::wifi::Network>> scan(QString* error);
 };

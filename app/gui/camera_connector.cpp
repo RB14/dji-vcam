@@ -92,6 +92,19 @@ void CameraConnector::run(std::stop_token stop, QString identifier, QString toke
             qInfo("bluetooth: link to the camera lost");
             continue;  // stopped, or the link broke: connect again
         }
+        // A channel move restarts the camera's access point: only here, before any live view
+        // (moved during one, the camera sent no more video; protocol-notes.md 3.12).
+        if (const int channel = wifi_channel_.exchange(0)) {
+            const auto reply = camera.request(djivcam::duml::kAddrWifi, 0x07, 0x2B,
+                                              {static_cast<std::uint8_t>(channel), 0x00}, 2s);
+            const bool moved = reply && !reply->payload.empty() && reply->payload[0] == 0x00;
+            qInfo("bluetooth: moving the camera's Wi-Fi to channel %d -> %s", channel,
+                  reply ? reply->describe().c_str() : "no reply");
+            if (moved) {
+                emit wifiChannelChanged(channel);
+            }
+        }
+
         // Hang up before the datalink may start (the camera ties its live view to the Bluetooth
         // session) and until the camera has to be woken again; the datalink starts once the camera
         // has noticed (it advertises again).
