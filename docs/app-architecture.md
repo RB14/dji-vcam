@@ -60,13 +60,14 @@ app/
   gui/         Qt Widgets app: camera_connector (the Bluetooth session on its own thread; it also
                carries the camera settings on the RTMP feed), network_dialog, rtmp_server (the
                interface) + go2rtc_server, pipeline (the low-latency feed, the RTMP feed or a
-               replay -> decoder -> preview + webcam), camera_panel, main_window
+               replay -> decoder -> preview + webcam; with both feeds the live view keeps running
+               for the settings while the picture comes from either), camera_panel, main_window
   cli/         dji-vcam-cli: every step on its own, for experiments and diagnostics
   tests/
 ```
 
 Threads: the connector's Bluetooth thread (it holds the link with the keep-alive), the session
-thread (UDP receive loop + timers) or the RTMP reader, and a decode thread, which hands each NV12
+thread (UDP receive loop + timers) and/or the RTMP reader, and a decode thread, which hands each NV12
 frame to the virtual camera (as is, or scaled into 1920x1080) and, shared and unchanged, to the
 preview. The preview uploads the Y and UV planes as two textures and converts them to RGB in a
 shader (BT.709 or BT.601, video or full range, as the stream signals), so the CPU neither converts
@@ -86,7 +87,8 @@ another server replaces it by implementing the same few methods.
 4. **Linux.** v4l2loopback sink, BlueZ; needs a real Linux machine for testing (WSL has neither
    Bluetooth nor v4l2loopback).
 5. **The camera on your Wi-Fi** (0.2.0). Done: Live Streaming mode, network join and choice, the
-   camera found by its MAC, the low-latency and RTMP feeds; the ESP32 bridge removed.
+   camera found by its MAC, the low-latency and RTMP feeds and both at once; the ESP32 bridge
+   removed.
 6. **Quality.** 1080p done (Live Streaming mode); GPU decode done (D3D11VA/VAAPI/NVDEC with CPU
    fallback); still to do: zero-copy GPU frames to the preview and virtual camera.
 7. **Camera controls.** Everything Mimo exposes, researched in [camera-controls.md](camera-controls.md):

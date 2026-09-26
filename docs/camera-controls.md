@@ -653,10 +653,12 @@ the settings mean:
 | Resolution / frame rate | Hidden: the list shows the livestream's format only, changes snap back |
 | Stabilization | Works (a change was accepted and applied on 2026-09-26) |
 | Record, photo, codec | Hidden: unverified |
-| FOV, exposure, white balance, colour | Shown; to check in the test session (docs/tasks.md) |
+| FOV, exposure, white balance, colour | Work (2026-09-26); the manual shutter stops at the frame rate (1/30 at 30 fps) |
 
-On the RTMP feed there is no live view session, so the app sends its requests over the Bluetooth
-link it holds to keep the camera on the network [VERIFIED 2026-09-26]:
+With both feeds (the app's default) the live view's connection runs alongside the RTMP push and
+carries every setting on both feeds [VERIFIED 2026-09-26, EV changed during a push]. With the RTMP
+feed alone there is no live view session, so the app sends its requests over the Bluetooth link it
+holds to keep the camera on the network [VERIFIED 2026-09-26]:
 
 - **The parameter command `02/8E` works** (to `0x01`): stabilization (`0x0008`), Daily/Sport
   (`0x0030`), FOV (`0x0009`), auto ISO limit (`0x000F`), GET and SET. DJI Mimo sends only these

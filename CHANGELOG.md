@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); see docs/building.md "Versions and
 releases". The ESP32-S3 bridge firmware has its own version, given with each release.
 
-## Unreleased
+## 0.2.0 (2026-09-26)
 
 The camera on your Wi-Fi: no ESP32 board any more.
 
@@ -22,7 +22,12 @@ The camera on your Wi-Fi: no ESP32 board any more.
   With the RTMP feed alone, the settings go over Bluetooth, where the camera takes stabilization,
   scene, FOV and the auto ISO limit; exposure and color are changed on the low-latency feed.
 - The manual shutter list stops at the frame rate (1/30 at 30 fps), the slowest the camera takes.
+- Disconnect no longer freezes the window.
 - Removed: the ESP32-S3 bridge (firmware, tools) and the camera access point channel option.
+
+Upgrading from 0.1.0: the installer replaces it; the ESP32-S3 board is no longer needed, and the
+first connection asks for the Wi-Fi network the camera should join. Tested with the Osmo Action 5
+Pro on a 2.4 GHz network; 5 GHz networks are not tested yet.
 
 ## 0.1.0 (2026-09-25)
 

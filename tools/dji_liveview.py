@@ -1,7 +1,8 @@
 """Experiment: open the camera datalink over its AP and try to start the live view.
 
-Run it while the camera AP is up and reachable (ESP32 bridge joined, laptop has 192.168.2.x),
-e.g. right after `dji_ble.py creds --hold 90` woke the AP.
+Run it while the camera AP is up and this computer is on it (it has a 192.168.2.x address), e.g.
+right after `dji_ble.py creds --hold 90` woke the AP. (The app itself now reaches the camera on
+your own network instead, docs/protocol-notes.md 3.13.)
 
 Sequence (docs/protocol-notes.md section 3.9): TCP 7001 poke, UDP 9004 handshake, settle,
 register (0x00/0x81 + 0x00/0x88), then the Pocket 3 live-view trigger (0x00/0x81 + 0x00/0x82 and a
@@ -132,7 +133,7 @@ def start_live_view(link: datalink.Datalink) -> None:
 def run(args: argparse.Namespace) -> int:
     local_ip = wait_for_camera_route(args.wait)
     if local_ip is None:
-        log("no address on 192.168.2.x: is the bridge joined to the camera AP?")
+        log("no address on 192.168.2.x: is this computer on the camera's AP?")
         return 1
     log(f"camera subnet reachable from {local_ip}")
 

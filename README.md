@@ -4,12 +4,13 @@ Use a **DJI Osmo Action 5 Pro** as a wireless, low-latency camera on your comput
 through a virtual webcam, in any other app. DJI VCam speaks the protocol the DJI Mimo app uses for
 its live preview, and can also take the camera's RTMP stream.
 
-> Status (2026-09-26): the Windows app puts the camera on your Wi-Fi network over Bluetooth and plays
-> its live view in **1080p** with **~135 ms glass-to-glass** latency, decoded on the GPU, or its RTMP
-> stream (~0.4 s) through a small RTMP server on this computer. Either one becomes the **DJI VCam**
-> webcam for other apps. No extra hardware: the ESP32-S3 bridge of 0.1.0 is gone. A Camera settings
-> panel exposes Mimo's controls; a Windows installer is built by `app/scripts/package-windows.sh`.
-> See [docs/app-architecture.md](docs/app-architecture.md) and [docs/tasks.md](docs/tasks.md).
+> Status (0.2.0, 2026-09-26): the Windows app puts the camera on your Wi-Fi network over Bluetooth
+> and plays its live view in **1080p** with **~135 ms glass-to-glass** latency, decoded on the GPU,
+> or its RTMP stream (~0.4 s) through a small RTMP server on this computer; by default both run, so
+> the camera's screens turn off and the feed switches instantly. Either feed becomes the **DJI
+> VCam** webcam for other apps. No extra hardware: the ESP32-S3 bridge of 0.1.0 is gone. A Camera
+> settings panel exposes Mimo's controls. See [docs/app-architecture.md](docs/app-architecture.md)
+> and [docs/tasks.md](docs/tasks.md).
 
 ## Requirements
 
@@ -61,7 +62,8 @@ Reports are welcome.
    time, then pick the Wi-Fi network for the camera and enter its password. The live view appears,
    and apps can pick the **DJI VCam** webcam.
 5. **Choose the feed** in the toolbar: *low latency*, or *RTMP* (its address for other apps is under
-   *Options → Stream addresses*).
+   *Options → Stream addresses*). Both run at once by default, so the switch is instant; the
+   [feeds' comparison](docs/installing.md#the-two-feeds) explains the trade-offs.
 
 Step by step, with every option and troubleshooting: [docs/installing.md](docs/installing.md). To
 build from source instead: [docs/building.md](docs/building.md).
@@ -87,7 +89,7 @@ build from source instead: [docs/building.md](docs/building.md).
       │                     your Wi-Fi network (the camera joins it)               │
       ├── low-latency feed: the camera's live view (UDP 9004)  ◄───────────────────┤
       └── RTMP feed: go2rtc on this computer (RTMP in, RTSP out)  ◄── RTMP push ───┘
-   either feed ──► GPU decode ──► preview + the DJI VCam webcam (1080p)
+   the chosen feed ──► GPU decode ──► preview + the DJI VCam webcam (1080p)
 ```
 
 - **Bluetooth LE** (DUML frames on `fff4`/`fff5`) pairs with the camera (one on-camera approval),
@@ -98,6 +100,8 @@ build from source instead: [docs/building.md](docs/building.md).
   commands and the video (H.264 in datagrams of type `0x02`).
 - For the **RTMP feed**, the camera pushes RTMP to go2rtc, run by the app; the app plays go2rtc's
   RTSP output, showing each frame as soon as it is decoded.
+- By default both run: the push starts first (the camera ignores its RTMP settings during a live
+  view), then the live view, which also carries every camera setting.
 
 ## Layout
 
@@ -121,8 +125,8 @@ Details and all prerequisites: [docs/building.md](docs/building.md).
 
 What is still missing (the full list: [docs/tasks.md](docs/tasks.md)):
 
-- **Stop only the RTMP push**: switching from RTMP back to low latency makes the camera leave and
-  rejoin the network (15-20 s), the only way known so far to end its push.
+- **Stop only the RTMP push**: with both feeds turned off (one feed at a time), a switch makes the
+  camera leave and rejoin the network (15-20 s), the only way known so far to end its push.
 - **Heat and battery with both feeds** (the default): measure over a long session, against the
   low-latency feed alone.
 - **Without a Wi-Fi network**: let this computer start its own hotspot (Windows Mobile Hotspot) for

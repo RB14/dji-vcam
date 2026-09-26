@@ -3,7 +3,7 @@
 // network; on request it also pushes RTMP. It then holds the Bluetooth link with DJI Mimo's
 // keep-alive, since the camera leaves the network when the link ends, and starts over when the link
 // is lost. stop() returns the camera to Video mode, which sends it back to its own access point.
-// On request the link also carries the camera's settings (camera()), for the RTMP feed.
+// On request the link also carries the camera's settings (camera()), for the RTMP feed alone.
 //
 // It reports each stage, so the UI can say what is happening: searching, waiting for the on-camera
 // pairing approval, joining.

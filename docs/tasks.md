@@ -33,10 +33,10 @@ Phases:
       RTMP quality, Stream addresses, settings panel limited to Live Streaming mode
 - [x] 4. Webcam in 1080p (shared layout version 2)
 - [x] 5. The ESP32 removed: bridge code, the access-point channel feature, `firmware/`, tools
-- [~] 6. Docs overhaul: README, installing.md, app-architecture, building, tasks, CHANGELOG;
-      camera-controls' Live Streaming matrix after the test session
-- [~] 7. Installer (go2rtc + license, firewall rule for RTMP); merge and release 0.2.0 after the test
-      session
+- [x] 6. Docs overhaul: README, installing.md, app-architecture, building, tasks, CHANGELOG;
+      camera-controls' Live Streaming matrix
+- [x] 7. Installer (go2rtc + license, firewall rule for RTMP); merged and released 0.2.0
+      (2026-09-26)
 - [x] Camera settings on the RTMP feed, over the Bluetooth link the app holds anyway
       (CameraConnector carries the settings panel's requests and the camera's pushes)
 

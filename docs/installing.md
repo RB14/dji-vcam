@@ -48,8 +48,8 @@ webcam for your user account.
    computer's own network first. Pick it (or type the name of a hidden network), enter its password
    and click **Join**. The app keeps the password, encrypted for your Windows account; *Options →
    Camera Wi-Fi network* changes it later.
-5. The camera joins the network (its screen says "Preparing to live stream"), the app finds it there
-   and the video starts.
+5. The camera joins the network (its screen says "Preparing to live stream"), the app finds it there,
+   starts the camera's RTMP stream and then the video.
 
 The status bar shows what is happening:
 
@@ -62,6 +62,7 @@ The status bar shows what is happening:
 | **Choose the Wi-Fi network for the camera** | The network dialog is waiting for you |
 | The camera is joining *network* | It connects to your network (up to about 10 s) |
 | The camera is on *network*: looking for it there | The app finds the camera's address on the network |
+| Starting the camera's RTMP stream | The camera connects to the app's RTMP server (a few seconds) |
 | Connecting to the camera | Starting the video connection |
 | Streaming | Video is flowing; the figures on the right are explained below |
 
@@ -176,7 +177,9 @@ status bar counts lost packets (*loss*) and held frames (*held*). The RTMP feed 
 - **Connect on startup**, **Freeze the picture after lost video**: see above.
 - **Camera Wi-Fi network**: the network the camera joins, and its password. While connected, a new
   choice moves the camera to it.
-- **RTMP quality**, **Stream addresses**: the RTMP feed, see above.
+- **RTMP quality**, **Keep the RTMP stream running alongside the live view**, **Stream addresses**:
+  the RTMP feed and both feeds at once, see above. Changing the quality or the option while
+  connected makes the camera rejoin the network.
 - **Forget the paired camera**: the next connection pairs again (approve it on the camera).
 - **About DJI VCam**: the version (e.g. `0.2.0`); please include it, and the log from
   `%LOCALAPPDATA%\dji-vcam\dji-vcam\logs`, when reporting a problem on
