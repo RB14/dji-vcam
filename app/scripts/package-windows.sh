@@ -24,6 +24,7 @@ win_env() { powershell.exe -NoProfile -Command "\$env:$1" | tr -d '\r'; }
 WIN_ROOT="${DJIVCAM_WIN_ROOT:-$(win_env USERPROFILE)\\.dji-vcam}"  # as in build-windows.sh
 BUILD="$(wslpath -u "$WIN_ROOT")/build"
 FFMPEG="$(wslpath -u "${FFMPEG_DIR:-$WIN_ROOT\\deps\\ffmpeg}")"
+GO2RTC="$(wslpath -u "${GO2RTC_DIR:-$WIN_ROOT\\deps\\rtmp\\go2rtc}")"
 
 "$APP_DIR/scripts/build-windows.sh" Release -DDJIVCAM_BUILD_GUI=ON
 
@@ -36,6 +37,8 @@ cp "$REPO_DIR/docs/installing.md" "$OUT/README.md"
 cp "$FFMPEG/LICENSE.txt" "$OUT/licenses/FFmpeg-LICENSE.txt"
 cp "$APP_DIR/vcam/windows/source/LICENSE-VCamSample.txt" "$OUT/licenses/VCamSample-LICENSE.txt"
 cp "$BUILD/_deps/wil-src/LICENSE" "$OUT/licenses/WIL-LICENSE.txt"
+cp "$GO2RTC/LICENSE" "$OUT/licenses/go2rtc-LICENSE.txt"
+[ -f "$OUT/go2rtc.exe" ] || { echo "go2rtc.exe missing: run app/scripts/setup-windows-deps.sh" >&2; exit 1; }
 cat > "$OUT/licenses/THIRD-PARTY-NOTICES.txt" <<'EOF'
 DJI VCam bundles the following third-party software, dynamically linked where noted.
 
@@ -51,6 +54,8 @@ VCamSample (https://github.com/smourier/VCamSample) - MIT. The virtual camera me
 
 Windows Implementation Libraries (https://github.com/microsoft/wil) - MIT, header-only, compiled
   into djivcam-source.dll. License text: WIL-LICENSE.txt.
+go2rtc 1.9.14 (https://github.com/AlexxIT/go2rtc) - MIT. The RTMP server of the RTMP feed
+  (go2rtc.exe, run by the app). License text: go2rtc-LICENSE.txt.
 
 DJI, Osmo and Mimo are trademarks of SZ DJI Technology Co., Ltd. This project is not affiliated
 with or endorsed by DJI.
