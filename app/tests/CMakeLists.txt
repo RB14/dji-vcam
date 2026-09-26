@@ -12,6 +12,7 @@ add_executable(djivcam_tests
     h264_test.cpp
     live_session_test.cpp
     live_stream_test.cpp
+    net_neighbors_test.cpp
     reassembler_test.cpp
     request_tracker_test.cpp
     camera_controller_test.cpp

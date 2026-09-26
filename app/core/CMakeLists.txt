@@ -5,6 +5,7 @@ add_library(djivcam_core STATIC
     src/live_session.cpp
     src/live_stream.cpp
     src/net.cpp
+    src/net_neighbors.cpp
     src/reassembler.cpp
     src/request_tracker.cpp
     src/camera_controller.cpp
@@ -19,6 +20,6 @@ configure_file(include/djivcam/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/include
 find_package(Threads REQUIRED)
 target_link_libraries(djivcam_core PUBLIC Threads::Threads)
 if(WIN32)
-    target_link_libraries(djivcam_core PUBLIC ws2_32)
+    target_link_libraries(djivcam_core PUBLIC ws2_32 iphlpapi)
     target_compile_definitions(djivcam_core PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX)
 endif()

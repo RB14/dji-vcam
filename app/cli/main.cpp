@@ -2,6 +2,7 @@
 //
 // Usage: dji-vcam-cli [--ble] [--seconds N] [--identifier-file PATH] [--dump PATH]
 //        dji-vcam-cli --version        print the version
+//        dji-vcam-cli --find-mac MAC   find the address of the device with this MAC on the local networks
 //        dji-vcam-cli --vcam-test N    publish a test pattern to the DJI VCam webcam for N seconds
 //        dji-vcam-cli --list-cameras   list the cameras apps can see
 //        dji-vcam-cli --vcam-register  register the DJI VCam webcam for all users, for good
@@ -65,6 +66,7 @@
 
 #include "djivcam/camera_controller.h"
 #include "djivcam/camera_model.h"
+#include "djivcam/net.h"
 #include "djivcam/session.h"
 #include "djivcam/version.h"
 
@@ -364,6 +366,10 @@ int main(int argc, char* argv[]) {
         if (flag == "--version") {
             std::printf("dji-vcam-cli %s\n", djivcam::kVersion);
             return 0;
+        } else if (flag == "--find-mac" && has_value) {
+            const auto ip = djivcam::net::find_ip_by_mac(argv[++i], 5s);
+            std::printf("%s\n", ip ? ip->c_str() : "not found");
+            return ip ? 0 : 1;
         } else if (flag == "--ble") {
             use_ble = true;
         } else if (flag == "--ble-scan" && has_value) {

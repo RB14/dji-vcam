@@ -321,6 +321,20 @@ std::optional<duml::Frame> CameraBle::request(std::uint8_t receiver, std::uint8_
     return impl_->request(receiver, cmd_set, cmd_id, std::move(payload), timeout);
 }
 
+std::optional<duml::Frame> CameraBle::request(const live::Command& command, std::chrono::milliseconds timeout) {
+    return impl_->request(command.receiver, command.cmd_set, command.cmd_id, command.payload, timeout);
+}
+
+void CameraBle::send(const live::Command& command) {
+    impl_->send(duml::Frame{duml::kAddrApp, command.receiver, impl_->next_seq++, duml::kFlagRequest, command.cmd_set,
+                            command.cmd_id, command.payload});
+}
+
+std::optional<duml::Frame> CameraBle::wait_for_push(std::uint8_t cmd_set, std::uint8_t cmd_id,
+                                                    std::chrono::milliseconds timeout) {
+    return impl_->wait_for_camera_request(cmd_set, cmd_id, timeout);
+}
+
 void CameraBle::keepalive() {
     impl_->send(duml::Frame{duml::kAddrApp, duml::kAddrSession, impl_->next_seq++, duml::kFlagRequest, 0x00, 0x2B,
                             {0x01, 0x01}});

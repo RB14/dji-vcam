@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "djivcam/duml.h"
+#include "djivcam/live_session.h"
 
 namespace djivcam::ble {
 
@@ -33,7 +34,8 @@ struct WifiCredentials {
 
 enum class PairResult { AlreadyPaired, Approved, TimedOut, Failed };
 
-class CameraBle {
+// Also the Bluetooth link of a live::Session (the camera on a Wi-Fi network).
+class CameraBle : public live::Link {
 public:
     using Log = std::function<void(const std::string&)>;
 
@@ -75,6 +77,12 @@ public:
     // Sends a DUML request to `receiver` and waits for its reply (nullopt: none within `timeout`).
     std::optional<duml::Frame> request(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id,
                                        duml::Bytes payload, std::chrono::milliseconds timeout);
+
+    // live::Link
+    std::optional<duml::Frame> request(const live::Command& command, std::chrono::milliseconds timeout) override;
+    void send(const live::Command& command) override;
+    std::optional<duml::Frame> wait_for_push(std::uint8_t cmd_set, std::uint8_t cmd_id,
+                                             std::chrono::milliseconds timeout) override;
 
 private:
     struct Impl;
