@@ -502,6 +502,11 @@ all over Bluetooth, the network password and pairing identifier not reproduced h
    `02 09` joined with settings, `02 08 <n> … 70 17` streaming (`n` counts up, `0x1770` = 6000
    kbit/s), `02 79` failed (the camera then shows "live stream failed" and retries by itself).
 
+**Both at once** [VERIFIED 2026-09-26]: while the camera pushes RTMP, the live view of 3.9 works
+alongside it (~3.5 Mbit/s, no loss, the push unaffected at 6 Mbit/s), and so do all the camera
+settings over it (EV changed). The order matters: while the live view runs (or just stopped), the
+camera ignores the RTMP settings `08/78` (no answer), so the push starts first.
+
 Two limits the camera does not explain (it answers `d6`, "busy", or fails later):
 - **The JSON must be at most 127 bytes** (a 128-byte buffer, it seems): 125 and 127 were accepted,
   130 and 133 refused with `d6`. Mimo's is 127. About 35 characters of address, so

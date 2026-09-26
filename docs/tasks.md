@@ -47,8 +47,15 @@ Test session with the camera (2026-09-26):
 - [x] go2rtc with DJI's RTMP client: works, ~0.4 s behind, once the start follows Mimo
       (settings, then the start; an address with an app and a key; at most 127 bytes of JSON)
 - [x] The camera's screens time out while it streams RTMP
-- [ ] Both feeds at once: delay, heat (the camera's temperature level in the 0x1D/0x02 status
-      push), battery over 30 min vs the access-point mode
+- [x] Both feeds at once: the live view runs alongside the RTMP push, with every setting over it
+      (tested with the CLI); the push has to start first (during a live view the camera ignores
+      the RTMP settings, which also broke the low latency -> RTMP switch: now a rejoin)
+- [x] Both feeds in the app (the option, on by default): the push first then the live view, the
+      switch in both directions at once, every setting on both feeds, the screens turn off; the
+      option off runs the live view alone (2026-09-26)
+- [ ] Both feeds: the 720p RTMP quality (a size change inside the decoder), a camera restart
+- [ ] Heat (the camera's temperature level in the 0x1D/0x02 status push) and battery over 30 min:
+      both feeds vs the low-latency feed alone
 - [x] Camera settings in Live Streaming mode on the low-latency feed: all of them work; the
       shutter cannot be slower than a frame (1/24 turns into 1/30 at 30 fps)
 - [ ] Can the camera record in Live Streaming mode
@@ -60,9 +67,8 @@ Test session with the camera (2026-09-26):
       `0x001A` values; stopping go2rtc during the push (that makes the camera retry by itself).
       Then check the live view still plays
 - [ ] 5 GHz networks; the network list's flag byte
-- [ ] Camera restart while connected, on each feed (as test 7 below did for 0.1.0): the app finds
-      the camera, puts it back on the network and the video returns by itself; time it (0.1.0:
-      ~15 s after the camera is on)
+- [x] Camera restart while connected, on each feed (as test 7 below did for 0.1.0): the app finds
+      the camera, puts it back on the network and the video returns by itself
 - [ ] Sleep and Bluetooth loss (out of range, Bluetooth off): the session rebuilds itself
 - [ ] The 1080p webcam (new media source: install), in Windows Camera, Chrome and OBS
 - [ ] Full install on a clean profile
@@ -154,7 +160,8 @@ Found in the test session (2026-09-26), to do:
 - [ ] Linux: v4l2loopback virtual camera, BlueZ; test on a real Linux machine
 - [ ] Without a Wi-Fi network: start this computer's own hotspot (Windows Mobile Hotspot) and put
       the camera on it (outdoors, no router)
-- [ ] Always stream RTMP (screens time out, both feeds at once): decide after the test session
+- [x] Both feeds at once (Options → Keep the RTMP stream running alongside the live view, on by
+      default): the push first, then the live view; the Feed switches the picture (2026-09-26)
 - [ ] Other camera models: test the Action 4/6, Osmo 360, Pocket 3 (the app names them, only 0x15
       tested); prefer known camera models in the Bluetooth search (a DJI Mic could be picked first)
 - [x] Versions and releases: SemVer in `project()`, full version from git (`0.1.0-dev+g<commit>`)

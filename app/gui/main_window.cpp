@@ -59,6 +59,7 @@ const QString kNetworkKey = QStringLiteral("network/ssid");               // the
 const QString kNetworkPasswordKey = QStringLiteral("network/password");   // secret::protect()ed
 const QString kFeedKey = QStringLiteral("video/feed");                    // "lowLatency" or "rtmp"
 const QString kRtmpResolutionKey = QStringLiteral("rtmp/resolution");     // 1080 or 720
+const QString kRtmpAlongsideKey = QStringLiteral("rtmp/alongside");       // the push runs with the live view
 const QString kDecoderKey = QStringLiteral("video/decoder");
 const QString kVirtualCameraKey = QStringLiteral("vcam/enabled");
 const QString kHoldOnLossKey = QStringLiteral("video/holdOnLoss");
@@ -183,10 +184,21 @@ MainWindow::MainWindow(QWidget* parent)
         connect(action, &QAction::triggered, this, [this, resolution = quality.resolution] {
             settings_->setValue(kRtmpResolutionKey, resolution);
             if (rtmp_requested_) {
-                onFeedChosen();  // the camera rejoins and pushes again with the new settings
+                rejoin();  // the camera pushes again with the new settings
             }
         });
     }
+    rtmp_alongside_action_ = add_toggle(options, tr("Keep the RTMP stream running alongside the live view"), settings_,
+                                        kRtmpAlongsideKey, true);
+    rtmp_alongside_action_->setToolTip(
+        tr("The camera's screens turn off, every setting works on both feeds and the Feed switches at once; "
+           "costs Wi-Fi bandwidth, heat and battery. Off: one feed at a time, a switch rejoins the network."));
+    options->setToolTipsVisible(true);
+    connect(rtmp_alongside_action_, &QAction::toggled, this, [this] {
+        if (connect_action_->isChecked() && !joined_ssid_.isEmpty()) {
+            rejoin();  // starts the feeds again the new way
+        }
+    });
     connect(options->addAction(tr("Stream addresses...")), &QAction::triggered, this, &MainWindow::showStreamAddresses);
     options->addSeparator();
     connect(options->addAction(tr("Forget the paired camera")), &QAction::triggered, this, &MainWindow::forgetCamera);
@@ -280,6 +292,16 @@ MainWindow::MainWindow(QWidget* parent)
             return;  // news from a session already stopped
         }
         qInfo("rtmp: the camera %s", ok ? "pushes its RTMP stream" : "refused the RTMP stream");
+        rtmp_pushing_ = ok;
+        if (rtmpAlongside() && !pipeline_->running()) {
+            startLowLatency();  // the live view follows the push (or plays alone if the push failed)
+            if (!ok) {
+                statusBar()->showMessage(tr("The camera's RTMP stream did not start: only the low-latency feed plays"), 15000);
+            } else if (feed() == Feed::Rtmp) {
+                pipeline_->playStream(rtmp_->playbackUrl());
+            }
+            return;
+        }
         if (!ok) {
             showStage(tr("The camera refused to start its RTMP stream: try the low-latency feed"), true);
         }
@@ -485,6 +507,7 @@ void MainWindow::toggleConnection(bool connect) {
         joined_ssid_.clear();
         camera_ip_.clear();
         rtmp_requested_ = false;
+        rtmp_pushing_ = false;
         updateNetworkLabel();
         showStatusView();
         showStage(tr("Not connected: click Connect"));
@@ -572,6 +595,7 @@ void MainWindow::askNetwork(const QString& error) {
                 joined_ssid_.clear();
                 camera_ip_.clear();
                 rtmp_requested_ = false;
+                rtmp_pushing_ = false;
                 connector_->setNetwork(ssid, password);  // joins, or leaves the current network for it
             }
         });
@@ -623,6 +647,7 @@ void MainWindow::onJoined(const QString& ssid, const QString& mac) {
     camera_mac_ = mac;
     camera_ip_.clear();
     rtmp_requested_ = false;
+    rtmp_pushing_ = false;
     updateNetworkLabel();
     if (network_dialog_) {
         network_dialog_->close();
@@ -661,16 +686,78 @@ void MainWindow::onLinkLost() {
     joined_ssid_.clear();
     camera_ip_.clear();
     rtmp_requested_ = false;
+    rtmp_pushing_ = false;
     updateNetworkLabel();
     showStatusView();
 }
 
+bool MainWindow::rtmpAlongside() const { return rtmp_ && rtmp_alongside_action_->isChecked(); }
+
 void MainWindow::startFeed() {
+    if (rtmpAlongside()) {
+        // The push first: the camera ignores its RTMP settings while its live view runs. The live
+        // view follows once the camera pushes (streamStarted).
+        QString error;
+        if (!requestRtmp(&error)) {
+            statusBar()->showMessage(error, 15000);
+            startLowLatency();
+        }
+        return;
+    }
     if (feed() == Feed::Rtmp) {
         startRtmp();
     } else {
         startLowLatency();
     }
+}
+
+bool MainWindow::requestRtmp(QString* error) {
+    if (!rtmp_) {
+        *error = tr("The RTMP feed needs go2rtc.exe next to DJI VCam: reinstall the app, or use the low-latency feed");
+        return false;
+    }
+    QString server_error;
+    if (!rtmp_->start(&server_error)) {
+        *error = tr("The RTMP server did not start: %1").arg(server_error);
+        return false;
+    }
+    // The camera reaches this computer at its address on the camera's network.
+    const auto host = djivcam::net::local_ip_towards(camera_ip_.toStdString(), RtmpServer::kRtmpPort);
+    if (!host) {
+        *error = tr("This computer has no address on the camera's network");
+        return false;
+    }
+    if (!rtmp_requested_) {
+        const RtmpQuality& quality = rtmp_quality(settings_->value(kRtmpResolutionKey, 1080).toInt());
+        const QString local = QString::fromStdString(*host);
+        djivcam::live::StreamSettings stream{quality.code, quality.kbps, rtmp_->ingestUrl(local).toStdString()};
+        if (!djivcam::live::fits(stream)) {
+            stream.url = rtmp_->ingestUrl(local, false).toStdString();  // the camera takes ~35 characters
+        }
+        if (!djivcam::live::fits(stream)) {
+            *error = tr("This computer's address is too long for the camera's RTMP settings");
+            return false;
+        }
+        qInfo("rtmp: asking the camera to push %dp at %u kbit/s to %s", quality.resolution, quality.kbps, stream.url.c_str());
+        connector_->startStream(stream);
+        rtmp_requested_ = true;
+    }
+    showStage(tr("Starting the camera's RTMP stream"));
+    return true;
+}
+
+void MainWindow::rejoin() {
+    // The camera ends its push only by leaving the network, and ignores RTMP settings while its
+    // live view runs: it rejoins, then the feeds start again.
+    qInfo("network: the camera rejoins %s", qPrintable(joined_ssid_));
+    stopFeed();
+    showStatusView();
+    const QString ssid = joined_ssid_;
+    joined_ssid_.clear();
+    camera_ip_.clear();
+    rtmp_requested_ = false;
+    rtmp_pushing_ = false;
+    connector_->setNetwork(ssid, networkPassword());
 }
 
 void MainWindow::startLowLatency() {
@@ -688,39 +775,13 @@ void MainWindow::startLowLatency() {
 }
 
 void MainWindow::startRtmp() {
-    if (!rtmp_) {
-        showStage(tr("The RTMP feed needs go2rtc.exe next to DJI VCam: reinstall the app, or use the low-latency feed"), true);
-        return;
-    }
     QString error;
-    if (!rtmp_->start(&error)) {
-        showStage(tr("The RTMP server did not start: %1").arg(error), true);
-        return;
-    }
-    // The camera reaches this computer at its address on the camera's network.
-    const auto host = djivcam::net::local_ip_towards(camera_ip_.toStdString(), RtmpServer::kRtmpPort);
-    if (!host) {
-        showStage(tr("This computer has no address on the camera's network"), true);
+    if (!requestRtmp(&error)) {
+        showStage(error, true);
         return;
     }
     camera_panel_->setController(nullptr);
-    enableBluetoothSettings();
-    if (!rtmp_requested_) {
-        const RtmpQuality& quality = rtmp_quality(settings_->value(kRtmpResolutionKey, 1080).toInt());
-        const QString local = QString::fromStdString(*host);
-        djivcam::live::StreamSettings stream{quality.code, quality.kbps, rtmp_->ingestUrl(local).toStdString()};
-        if (!djivcam::live::fits(stream)) {
-            stream.url = rtmp_->ingestUrl(local, false).toStdString();  // the camera takes ~35 characters
-        }
-        if (!djivcam::live::fits(stream)) {
-            showStage(tr("This computer's address is too long for the camera's RTMP settings"), true);
-            return;
-        }
-        qInfo("rtmp: asking the camera to push %dp at %u kbit/s to %s", quality.resolution, quality.kbps, stream.url.c_str());
-        connector_->startStream(stream);
-        rtmp_requested_ = true;
-    }
-    showStage(tr("Starting the camera's RTMP stream"));
+    enableBluetoothSettings();  // no live view: its connection would carry every setting
     pipeline_->startStream(rtmp_->playbackUrl(), static_cast<DecoderPreference>(decoder_choice_->currentData().toInt()));
 }
 
@@ -746,22 +807,16 @@ void MainWindow::onFeedChosen() {
     if (!connect_action_->isChecked() || joined_ssid_.isEmpty() || camera_ip_.isEmpty()) {
         return;  // the choice applies once the camera is on the network
     }
-    stopFeed();
-    showStatusView();
-    if (rtmp_requested_) {
-        // Only leaving the network ends the camera's push: it rejoins, then the chosen feed starts.
-        qInfo("rtmp: the camera rejoins %s without its push", qPrintable(joined_ssid_));
-        const QString ssid = joined_ssid_;
-        joined_ssid_.clear();
-        camera_ip_.clear();
-        rtmp_requested_ = false;
-        if (rtmp_) {
-            rtmp_->stop();
+    if (rtmp_pushing_ && pipeline_->hasLiveView()) {  // both run: only the picture changes
+        qInfo("feed: %s", feed() == Feed::Rtmp ? "RTMP" : "low latency");
+        if (feed() == Feed::Rtmp) {
+            pipeline_->playStream(rtmp_->playbackUrl());
+        } else {
+            pipeline_->playLive();
         }
-        connector_->setNetwork(ssid, networkPassword());
         return;
     }
-    startFeed();
+    rejoin();  // one feed at a time
 }
 
 void MainWindow::showStreamAddresses() {

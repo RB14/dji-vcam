@@ -41,7 +41,16 @@ Pipeline::~Pipeline() { stop(); }
 void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPreference decoder) {
     stop();
     start_decoder(decoder);
-    auto on_video = [this](std::span<const std::uint8_t> bytes) { assembler_->push(bytes); };
+    live_video_ = true;
+    auto on_video = [this](std::span<const std::uint8_t> bytes) {
+        if (!live_video_) {
+            return;  // the RTMP feed is the picture: the live view only carries the settings
+        }
+        if (reset_assembler_.exchange(false)) {
+            assembler_->reset();
+        }
+        assembler_->push(bytes);
+    };
     auto on_state = [this](djivcam::SessionState state, const std::string& detail) {
         video_since_connect_ = state == djivcam::SessionState::Streaming;
         if (state == djivcam::SessionState::WaitingForRoute) {
@@ -49,11 +58,15 @@ void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPrefe
         }
         if (state != djivcam::SessionState::Streaming) {
             assembler_->reset();
-            holding_ = true;  // the stream restarts mid-GOP: wait for a keyframe
+            if (live_video_) {
+                holding_ = true;  // the stream restarts mid-GOP: wait for a keyframe
+            }
         } else if (camera_) {
             camera_->on_streaming();  // (re)subscribe to the camera's settings
         }
-        emit stateChanged(QString::fromUtf8(djivcam::to_string(state)), QString::fromStdString(detail));
+        if (live_video_) {
+            emit stateChanged(QString::fromUtf8(djivcam::to_string(state)), QString::fromStdString(detail));
+        }
     };
     session_ = std::make_unique<djivcam::LiveViewSession>(std::move(config), on_video, on_state);
     camera_notified_ = false;
@@ -74,7 +87,11 @@ void Pipeline::start(djivcam::SessionConfig config, djivcam::media::DecoderPrefe
         }
         camera_->on_message(frame);
     });
-    session_->set_gap_callback([this] { gap_pending_ = true; });
+    session_->set_gap_callback([this] {
+        if (live_video_) {
+            gap_pending_ = true;
+        }
+    });
     session_->set_log_callback([](const std::string& line) { qInfo("session: %s", line.c_str()); });
     session_->start();
 }
@@ -112,6 +129,36 @@ void Pipeline::startStream(const QString& url, djivcam::media::DecoderPreference
     stream_ = std::jthread([this, target = url.toStdString()](std::stop_token stop) { stream_loop(stop, target); });
 }
 
+void Pipeline::playStream(const QString& url) {
+    if (!session_ || stream_.joinable()) {
+        return;
+    }
+    live_video_ = false;
+    switching_ = true;
+    {
+        std::lock_guard lock(mutex_);
+        queue_.clear();
+    }
+    stream_ = std::jthread([this, target = url.toStdString()](std::stop_token stop) { stream_loop(stop, target); });
+}
+
+void Pipeline::playLive() {
+    if (!session_ || !stream_.joinable()) {
+        return;
+    }
+    stream_.request_stop();  // also interrupts a blocked network read
+    stream_.join();
+    switching_ = true;
+    {
+        std::lock_guard lock(mutex_);
+        queue_.clear();
+    }
+    reset_assembler_ = true;
+    gap_pending_ = false;
+    live_video_ = true;
+    emit stateChanged(QString::fromUtf8(djivcam::to_string(session_->state())), {});
+}
+
 void Pipeline::stream_loop(std::stop_token stop, const std::string& url) {
     std::mutex sleep_mutex;
     std::condition_variable_any sleeper;
@@ -147,6 +194,7 @@ void Pipeline::start_decoder(djivcam::media::DecoderPreference decoder) {
     last_held_ = 0;
     gap_pending_ = false;
     holding_ = true;
+    switching_ = false;
     stream_bytes_ = 0;
     worst_delay_us_ = 0;
     width_ = height_ = 0;
@@ -187,6 +235,13 @@ void Pipeline::stop() {
 }
 
 void Pipeline::enqueue(djivcam::h264::AccessUnit&& unit) {
+    if (switching_) {
+        if (!unit.keyframe) {
+            return;  // the decoder has not seen this source's references: nothing but noise until a keyframe
+        }
+        switching_ = false;
+        holding_ = false;
+    }
     stream_bytes_ += unit.data.size();
     // A unit completed after lost video contains the gap (a lost start of this unit merges it into
     // the previous one): it and everything after it is damaged until an intact keyframe.
@@ -315,7 +370,7 @@ void Pipeline::report_stats() {
     out.delay_ms = static_cast<double>(worst_delay_us_.exchange(0)) / 1000.0;
     last_frames_ = frames;
     last_stream_bytes_ = bytes;
-    if (session_) {
+    if (session_ && live_video_) {
         const auto stats = session_->stats();
         const auto received = stats.video_datagrams - last_video_datagrams_;
         const auto lost = stats.lost - last_lost_;

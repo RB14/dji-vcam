@@ -3,6 +3,8 @@
 // The source is the camera's low-latency live view (start), its RTMP feed through the local RTMP
 // server (startStream), or a recorded stream standing in for the camera (startReplay), which
 // exercises everything after the network (decoding, preview, virtual camera) without a camera.
+// With the RTMP stream running alongside, the live view keeps running for the camera's settings
+// while the picture comes from either (playStream / playLive).
 #pragma once
 
 #include <QObject>
@@ -53,6 +55,12 @@ public:
     // Plays a network stream (the RTMP feed, read from the local RTMP server) and reconnects while it
     // runs. The camera's settings are not available this way (camera() is null).
     void startStream(const QString& url, djivcam::media::DecoderPreference decoder);
+    // While the live view runs (start()): shows the RTMP feed read from `url` instead of its video,
+    // the live view carrying on for the camera's settings (playStream), or its video again
+    // (playLive). Each source starts at its next keyframe.
+    void playStream(const QString& url);
+    void playLive();
+    bool hasLiveView() const { return session_ != nullptr; }
     void stop();
     bool running() const { return session_ != nullptr || replay_.joinable() || stream_.joinable(); }
 
@@ -124,6 +132,9 @@ private:
     std::atomic<bool> hold_on_loss_{false};
     std::atomic<bool> gap_pending_{false};   // lost video: the access unit being assembled is damaged
     std::atomic<bool> holding_{true};        // until the next intact keyframe (also after (re)connecting)
+    std::atomic<bool> live_video_{true};     // the live view's video is the picture (not the RTMP feed)
+    std::atomic<bool> reset_assembler_{false};  // for the session thread: its video resumes
+    std::atomic<bool> switching_{false};     // a new source: nothing until its first keyframe
     std::atomic<std::uint64_t> held_frames_{0};
     std::uint64_t last_held_ = 0;
     std::mutex frame_mutex_;

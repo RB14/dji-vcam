@@ -97,8 +97,8 @@ another server replaces it by implementing the same few methods.
 
 ## Open questions
 
-- Always stream RTMP? The camera's screens only time out during a stream, and both feeds at once
-  would switch instantly; the cost (heat, battery, Wi-Fi airtime) is to be measured.
+- Both feeds at once (the default since 0.2.0: the screens time out, every setting on both feeds,
+  instant switching): its cost in heat and battery is to be measured.
 - Stopping only the RTMP push, so switching back to the low-latency feed needs no rejoin
   (docs/protocol-notes.md 3.13).
 - Recording while in Live Streaming mode; 5 GHz networks; which settings the camera accepts in

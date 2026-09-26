@@ -14,10 +14,13 @@ The camera on your Wi-Fi: no ESP32 board any more.
   ~135 ms delay.
 - New RTMP feed: the camera pushes RTMP to go2rtc, bundled with the app, and the app plays it
   (~0.4 s behind); other apps can open it too (Options → Stream addresses).
+- Both feeds at once, by default (Options → Keep the RTMP stream running alongside the live view):
+  the camera's screens turn off as during any livestream, every setting works on both feeds, and
+  the Feed switches at once. Without it, one feed at a time: a switch rejoins the network.
 - The DJI VCam webcam is 1920x1080; smaller video is scaled up.
 - While connected, the shooting mode, format and codec controls are hidden (Live Streaming mode).
-  On the RTMP feed the settings go over Bluetooth, where the camera takes stabilization, scene, FOV
-  and the auto ISO limit; exposure and color are changed on the low-latency feed.
+  With the RTMP feed alone, the settings go over Bluetooth, where the camera takes stabilization,
+  scene, FOV and the auto ISO limit; exposure and color are changed on the low-latency feed.
 - The manual shutter list stops at the frame rate (1/30 at 30 fps), the slowest the camera takes.
 - Removed: the ESP32-S3 bridge (firmware, tools) and the camera access point channel option.
 

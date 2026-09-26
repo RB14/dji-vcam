@@ -90,10 +90,23 @@ The toolbar's **Feed** choice selects what the app plays:
   *Options → Stream addresses* shows its addresses, e.g. for an OBS *Media Source*
   (`rtsp://127.0.0.1:8554/live`).
 
-The camera settings panel works with both.
+**Options → Keep the RTMP stream running alongside the live view** (on by default) runs both at
+once: the camera pushes its RTMP stream, and the app keeps the live view connection too. The Feed
+choice then only picks which picture you see, and switches at once.
 
-Switching from RTMP back to low latency makes the camera leave and rejoin the network (the camera
-only stops its RTMP stream that way), which takes 15 to 20 s.
+| | Low latency only | RTMP only | Both (the option, default) |
+|---|---|---|---|
+| Delay | ~0.15 s | ~0.4 s | ~0.15 s or ~0.4 s, as the Feed picks |
+| Camera screens | **stay on** ("Preparing to live stream") | turn off after their timeout | turn off after their timeout |
+| Camera settings | all of them | only stabilization, scene, FOV, auto ISO limit (over Bluetooth) | all of them, on both feeds |
+| Switching the Feed | the camera rejoins the network, 15-20 s | the camera rejoins the network, 15-20 s | instant |
+| Other apps (OBS, VLC) | through the DJI VCam webcam | also the RTMP stream's addresses | both |
+| Cost | ~3.5 Mbit/s of Wi-Fi | ~6 Mbit/s (4 at 720p) | both: ~10 Mbit/s, more heat and battery (not measured yet) |
+| Lost video | occasional damaged frames (UDP, see below) | none (TCP) | as the Feed picks |
+
+With the option off, the app runs one feed at a time. A switch makes the camera leave and rejoin
+the network: the camera only ends its RTMP stream that way, and ignores the RTMP settings while its
+live view runs. Changing the option while connected also rejoins.
 
 ## Using DJI VCam as a webcam (OBS, Zoom, Teams, browsers)
 
@@ -137,9 +150,9 @@ and codec do not apply (a change of mode would disconnect it), and recording in 
 supported yet, so those controls are hidden. The lists only offer what the camera accepts; if it
 refuses a change, the control snaps back and the status bar says why.
 
-On the **RTMP feed** the settings go over Bluetooth, and there the camera only takes stabilization,
-Daily/Sport, FOV and the auto ISO limit: exposure and color are shown but greyed out. Change them
-on the low-latency feed; the camera keeps them.
+With the RTMP stream alone (the option off), the settings go over Bluetooth, and there the camera
+only takes stabilization, Daily/Sport, FOV and the auto ISO limit: exposure and color are shown
+but greyed out. Change them on the low-latency feed (the camera keeps them), or turn the option on.
 
 ## Lost video
 

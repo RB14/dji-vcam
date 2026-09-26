@@ -58,6 +58,13 @@ private:
     void startFeed();
     void startLowLatency();
     void startRtmp();
+    // Asks the camera to push to the RTMP server (once per join); false with `error` if it cannot.
+    bool requestRtmp(QString* error);
+    // The camera leaves and joins its network again, then the feeds start again (feed switches in
+    // single-feed mode, option changes).
+    void rejoin();
+    // The RTMP stream runs alongside the live view (option, and the RTMP server is there).
+    bool rtmpAlongside() const;
     // The camera settings panel over the Bluetooth link (the RTMP feed).
     void enableBluetoothSettings();
     void stopFeed();
@@ -93,6 +100,7 @@ private:
     CameraPanel* camera_panel_;
     QAction* connect_action_;
     QAction* startup_action_;
+    QAction* rtmp_alongside_action_;
     QAction* vcam_action_;
     QLabel* vcam_label_;
     djivcam::vcam::VirtualCamera* virtual_camera_ = nullptr;
@@ -114,6 +122,7 @@ private:
     QString camera_mac_;
     std::jthread finder_;  // looks up camera_ip_ from its MAC
     bool rtmp_requested_ = false;  // the camera was asked to push RTMP in this join
+    bool rtmp_pushing_ = false;    // and it confirmed the push
     bool settings_over_bluetooth_ = false;  // the panel controls the camera through connector_
     unsigned stats_seconds_ = 0;   // for a stats line in the log every 10 s
 };

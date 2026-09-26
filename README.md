@@ -123,8 +123,8 @@ What is still missing (the full list: [docs/tasks.md](docs/tasks.md)):
 
 - **Stop only the RTMP push**: switching from RTMP back to low latency makes the camera leave and
   rejoin the network (15-20 s), the only way known so far to end its push.
-- **Always stream RTMP**: the camera's screens only time out while it streams, and both feeds at
-  once would switch instantly. To decide once heat and battery are measured.
+- **Heat and battery with both feeds** (the default): measure over a long session, against the
+  low-latency feed alone.
 - **Without a Wi-Fi network**: let this computer start its own hotspot (Windows Mobile Hotspot) for
   the camera, e.g. outdoors.
 - **5 GHz networks**: not tested yet.
