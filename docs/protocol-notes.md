@@ -45,6 +45,7 @@ Key files:
 4. **Datalink port.** A genuine Action 5 Pro uses UDP **9004** plus a TCP-7001 "poke" [V-A5P, tester] (`CameraModel.kt:54-56`, `MEDIA_PROTOCOL.md:28,69`). The Xtra rebadge uses UDP **10004** with no poke [V-XTRA]. Some osmosis prose still says "Action 5 Pro = 10004". Those lines describe the Xtra (see 3.1).
 5. **No open-source code shows live view over the AP for an Action 5 Pro.** osmosis only does media offload. PocketShow's live-view start (`0x00/0x88`, `0x00/0x81`, `0x00/0x82`, then `0x00/0x4F` every 200 ms, video in UDP type `0x02` behind a 12-byte sub-header) exists only for the Pocket 3 [V-P3, claimed by PocketShow]. It has **no counterpart in osmosis**. On an Action 5 Pro it is **[UNVERIFIED]**.
 6. **A verified video path does exist for the Action 5 Pro: RTMP push (Moblin).** Over BLE only, you tell the camera to join *your* Wi-Fi as a client and push RTMP to a URL. This is the most proven way to get Action 5 Pro video into OBS: run a local RTMP server and add it as a Media Source. See section 4.
+7. **[2026-09-26] The low-latency live view also works with the camera on your Wi-Fi**, in 1080p, in Live Streaming mode and without any RTMP stream. See 3.13.
 
 ---
 
@@ -433,6 +434,58 @@ started just before the camera drops the Bluetooth session dies with it.
   On channel 1 the same setup gave a steady 3.7 Mbit/s with no loss. A scan cannot see how busy a
   network is, only how loud: channel 10 carried only 1.3 times channel 1's interference.
 
+### 3.13 The camera on your Wi-Fi network: Live Streaming mode [VERIFIED 2026-09-26]
+
+Instead of offering its own access point, the camera can join an existing Wi-Fi network (DJI:
+`dji_wifi_switch_sta_and_connect`), which DJI Mimo does for its RTMP livestream. **The live view
+of 3.9 then works over that network**, at the camera's address on it, **in 1920x1080 at 30 fps**
+(~3.6-4.1 Mbit/s) and with the same delay as through the camera's access point (measured with a
+clock on 2026-09-26). No RTMP stream has to run. Reproduced with `dji-vcam-cli --join-network`.
+
+**DJI Mimo's sequence** (Android HCI snoop log of a Mimo livestream setup on the camera, 2026-09-26;
+all over Bluetooth, the network password and pairing identifier not reproduced here):
+
+| # | App -> camera | Camera's answer | Notes |
+|---|---|---|---|
+| 1 | `00/2B 04 00` to `0xF0`, pairing `07/45` | as in a.5 | no `53/10` wake, no `07/07`/`07/0E` |
+| 2 | `02/E1 1a` to `0x08` | `00` after ~2 s | **Live Streaming mode**; the screen says "Preparing to live stream" |
+| 3 | `02/8E 00 01 1c 00` to `0x08`, `08/79 01` to `0x08` | `08/79`: the stored livestream settings (below) | |
+| 4 | `07/AB` to `0x1B` (repeated) | `00`, then the network list `07/AC` (below) seconds later | optional for us |
+| 5 | `07/47` + name + password (length-prefixed strings) to `0x07` | `00 00` | Mimo sent it twice: the first, during the scan, got no answer |
+| 6 | `08/78` start (below) to `0x08`, `02/8E 01 01 08 00 01 00` to `0x01`, `02/8E 01 01 1a 00 01 01` to `0x08` | `00` each | the camera connects to the RTMP address |
+| 7 | `00/2B 04 00` to `0xF0` every 2.5 s | | Mimo keeps the Bluetooth link the whole time |
+| 8 | stop: `02/8E 01 01 1a 00 01 02` to `0x08` | `00` | |
+
+**What the camera needs** (our tests, 2026-09-26):
+
+- **Live Streaming mode first.** Outside it, `07/47` makes the camera drop its access point and try
+  to join, but it never reaches the router; its answer (`01 ff`) came minutes later.
+- **The scan is optional.** In Live Streaming mode the join answers `00 00` after ~10 s without it,
+  ~1 s after a scan. Hidden networks join by name (and appear in the list once known).
+- **The Bluetooth link must stay up**, with Mimo's keep-alive: hanging up sends the camera back to
+  its access point within seconds. (The opposite of 3.11, which is about the access point.)
+- **Stop** (`02/8E 01 01 1a 00 01 02`) ends the livestream, the join *and* Live Streaming mode.
+  Switching to Video mode (`02/E1 01` to `0x08`; sent to `0x01` it gets no answer in this mode)
+  also ends the join.
+- The camera keeps both screens on while "preparing" (they time out during a running RTMP stream,
+  as seen with Mimo); the Video mode's format list is replaced by the livestream's (the Camera
+  settings panel's format changes snap back), stabilization changes work.
+- The camera answers `07/0C` with its Wi-Fi MAC, the same on its access point and as a client:
+  the app can find its address by MAC, or from its RTMP connection.
+
+**Livestream start `08/78`** (Mimo, for the Action 5 Pro; Moblin's older layout is in section 4):
+`01 8a 00 <resolution> <kbit/s: u16 LE> fe 01 00 00 00 00 7f 00` then JSON
+`{"rtmpAddress":"rtmp:\/\/<host>:<port>\/<path>","watermark":0,"codec":"","EnhancedRTMP":false,"supportStopLive":false}`
+(slashes escaped). Resolution `04` = 720p, `0a` = 1080p (as Moblin); Mimo offered 4000 and
+6000 kbit/s. The camera **stores** these settings; `08/79 01` reads them back:
+`00 01 8a 00 <resolution> <kbit/s> 00 01 00 00 00 00 7f 00 <address, NUL-padded>`. A start to a
+closed port is accepted (`00`) and stores them too. **The preview stays 1080p** whatever is stored.
+Unknown: `fe 01` (stored as `00 01`), the frame rate field.
+
+**Network list `07/AC`** (pushed after `07/AB`): a 4-byte header (`01 11 00 00`; a short
+follow-up push had `01 11 04 00`), then per network `[length incl. itself] 01 01 <band> <flag> 00
+<name>`. Band: `01` 2.4 GHz, `02` 5 GHz (by the networks' names); the flag's meaning is unknown.
+
 ## 4. Verified A5P video alternative: RTMP push over BLE (Moblin)
 
 [V-A5P per Moblin code comments: "Patch for OA5P …" (`DjiDevice.swift:415-425`); model-specific configure byte `0x1A` for A5P/360 (`:340-349`); `hasNewProtocol()` = true for A5P (`SettingsDjiDevice.swift:80-101`)]
@@ -472,7 +525,7 @@ Notes:
 8. **Activation gate:** a never-activated body has no AP (measured on a Nano). The user must have activated the camera with Mimo once.
 9. **Shared identifier:** using `284ae5b8…` may fight over the camera's remembered-pairing slot with Moblin or osmosis on the same camera. Mint your own and accept one on-screen tap.
 10. **Xtra vs DJI firmware:** the Xtra runs the datalink on 10004, and camera-control cmdset `0x02` to receiver `0x01` gets **no reply** on the Xtra (`MEDIA_PROTOCOL.md:83,713-715`). Genuine DJI A5P behaviour there is not documented.
-11. **AP vs station exclusivity:** whether the A5P can hold its own AP while in RTMP (station) mode is **[UNVERIFIED]**. Assume it cannot.
+11. **AP vs station exclusivity:** ~~unverified~~ [VERIFIED 2026-09-26] the A5P drops its AP while it is a client of another network (3.13).
 12. **Simpler alternative for OBS:** the A5P has a USB **UVC webcam** mode (R-SDK camera mode `0x23`, `protocol_data_segment.md:220`). If a cable is acceptable, it avoids all of the above.
 13. Firmware drift: all of this is reverse-engineered and may change with firmware. The osmosis docs record several reversals (the `0x07/0x47` wake, the MTU, the port mapping).
 

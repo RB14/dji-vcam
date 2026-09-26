@@ -3,6 +3,49 @@
 Living list, updated as work progresses. Status: `[ ]` to do, `[~]` in progress, `[x]` done.
 Milestones refer to [app-architecture.md](app-architecture.md).
 
+## Overhaul: the camera on your Wi-Fi (branch `wifi-live`, started 2026-09-26)
+
+The camera joins a Wi-Fi network in its Live Streaming mode (protocol-notes.md 3.13): the
+low-latency live view then works over that network in 1080p, and the camera can also push RTMP to
+this PC. This replaces the ESP32 bridge entirely.
+
+Decisions (2026-09-26):
+- **Two feeds**: the low-latency preview (our DJI protocol) or RTMP (camera -> RTMP server on this
+  PC -> our player, optimised for delay but decoding every frame). RTMP runs only when chosen for
+  now; "always stream RTMP" (screens time out, instant switching) is decided after the test session.
+- **RTMP server behind an interface**, with go2rtc (7 MB) and MediaMTX (26 MB) backends; the test
+  session decides which one ships (go2rtc if DJI's RTMP client works with it).
+- **The ESP32 goes completely** (code, firmware, tools, docs); it stays in git history and v0.1.0.
+- **Networks**: the camera's own scan list plus manual entry (hidden networks); a PC-hotspot mode is
+  for later.
+- The camera settings panel offers only what Live Streaming mode supports; the RTMP address is shown
+  for other apps; the webcam becomes 1080p.
+
+Phases:
+- [~] 0. Groundwork: experiment CLI (`--join-network` & co.), the recipe in protocol-notes.md 3.13
+- [ ] 1. Core protocol (unit-tested builders/parsers: join, start/stop, stored settings, network
+      list) and the Bluetooth live session (pair, Live Streaming mode, join, optional RTMP start,
+      held link with keep-alive, recovery after power-off or link loss, Video mode on disconnect)
+- [ ] 2. RTMP server interface + go2rtc / MediaMTX backends; RTMP player into the GPU pipeline;
+      the camera's address from its RTMP connection or by MAC
+- [ ] 3. App: network picker (scan list, manual entry, password kept with Windows DPAPI), feed
+      switch, RTMP quality, "Stream address" panel, settings filtered to Live Streaming mode
+- [ ] 4. Webcam in 1080p
+- [ ] 5. Remove the ESP32: bridge code, the access-point channel feature, bridge options,
+      `firmware/`, bridge tools and wrapper commands
+- [ ] 6. Docs overhaul: README, installing.md, protocol-notes, camera-controls (Live Streaming
+      settings matrix), app-architecture, building, CHANGELOG
+- [ ] 7. Installer (bundle the chosen server + license, firewall for RTMP), merge, release 0.2.0
+
+Test session with the camera (after phase 5):
+- [ ] go2rtc vs MediaMTX with DJI's RTMP client; delay and accuracy of the RTMP feed
+- [ ] Screens time out with our RTMP; both feeds at once: delay, heat (the camera's temperature
+      level in the 0x1D/0x02 status push), battery over 30 min vs the access-point mode
+- [ ] Which camera settings work in Live Streaming mode; can it record meanwhile
+- [ ] 5 GHz networks; the network list's flag byte
+- [ ] Power-off, sleep and Bluetooth loss: the session rebuilds itself
+- [ ] Full install on a clean profile
+
 ## Test plan with the camera (started 2026-09-25)
 
 1. [x] Media source update (lock fix, heartbeat, BT.709 type) installed. A stale Windows build
