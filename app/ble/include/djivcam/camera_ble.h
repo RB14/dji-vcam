@@ -65,6 +65,13 @@ public:
     // DJI Mimo answers none of them over Bluetooth and the camera keeps the link: off by default.
     // The pairing approval (0x07/0x46) is always processed and answered.
     void set_answer_requests(bool answer);
+    // Logs the requests and pushes the camera sends on its own (never the replies to ours, which
+    // can carry the camera's Wi-Fi password). For experiments.
+    void set_log_camera_requests(bool log);
+    // Waits for a request or push the camera sends on its own (e.g. its Wi-Fi scan results 0x07/0xAC
+    // after 0x07/0xAB), including one received shortly before; nullopt if none within `timeout`.
+    std::optional<duml::Frame> wait_for_camera_request(std::uint8_t cmd_set, std::uint8_t cmd_id,
+                                                       std::chrono::milliseconds timeout);
     // Sends a DUML request to `receiver` and waits for its reply (nullopt: none within `timeout`).
     std::optional<duml::Frame> request(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id,
                                        duml::Bytes payload, std::chrono::milliseconds timeout);

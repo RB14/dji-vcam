@@ -12,6 +12,19 @@
 //                                      time each per-frame step of the live view on a recorded stream
 //   --ble              wake the camera's Wi-Fi over Bluetooth first, then hang up, as DJI Mimo does
 //   --wifi-channel N   with --ble: move the camera's access point to 2.4 GHz channel N (it keeps it)
+//   --ble-query        with --ble: pair without waking the Wi-Fi, print the camera's Wi-Fi state
+//                      (mode 07/39, network name 07/07, signal 07/0A, band 07/44) and exit
+//   --join-network FILE  with --ble: make the camera leave its access point and join the Wi-Fi
+//                      network in FILE (first line its name, second its password; never printed),
+//                      then exit (0x07/0x47, protocol-notes.md section 4)
+//   --live-mode        with --join-network: switch the camera to Live Streaming mode first, as DJI
+//                      Mimo does (no stream is started)
+//   --hold N           with --join-network: keep the Bluetooth link N seconds after the join, with
+//                      DJI Mimo's keep-alive (0x00/0x2B 04 00 every 2.5 s)
+//   --video-after-join with --join-network: switch the camera back to Video mode 5 s after the join
+//   --no-scan          with --join-network: join without asking the camera to scan first
+//   --live-resolution 720|1080 URL  with --join-network: store the livestream resolution by
+//                      starting a livestream to URL and stopping it at once (the preview stays 1080p)
 //   --ble-hold         with --ble: keep the Bluetooth link open (the app's behaviour before
 //                      2026-09-25; the camera then sends no video after a short power-off)
 //   --identifier-file  file holding the approved pairing identifier (never printed)
@@ -321,6 +334,14 @@ int main(int argc, char* argv[]) {
     std::string decoder_choice = "auto";
     std::string frames_out;
     std::string identifier_file;
+    [[maybe_unused]] std::string join_network_file;
+    [[maybe_unused]] bool ble_query = false;
+    [[maybe_unused]] bool live_mode = false;
+    [[maybe_unused]] int join_hold_seconds = 0;
+    [[maybe_unused]] bool video_after_join = false;
+    [[maybe_unused]] bool join_scan = true;
+    [[maybe_unused]] int live_resolution = 0;
+    [[maybe_unused]] std::string live_url;
     std::string dump_path;
     std::vector<SendSpec> sends;
     std::vector<SendSpec> ble_sends;
@@ -363,6 +384,21 @@ int main(int argc, char* argv[]) {
             frames_out = argv[++i];
         } else if (flag == "--seconds" && has_value) {
             seconds = std::stoi(argv[++i]);
+        } else if (flag == "--live-resolution" && i + 2 < argc) {
+            live_resolution = std::stoi(argv[++i]);
+            live_url = argv[++i];
+        } else if (flag == "--no-scan") {
+            join_scan = false;
+        } else if (flag == "--video-after-join") {
+            video_after_join = true;
+        } else if (flag == "--hold" && has_value) {
+            join_hold_seconds = std::stoi(argv[++i]);
+        } else if (flag == "--live-mode") {
+            live_mode = true;
+        } else if (flag == "--ble-query") {
+            ble_query = true;
+        } else if (flag == "--join-network" && has_value) {
+            join_network_file = argv[++i];
         } else if (flag == "--identifier-file" && has_value) {
             identifier_file = argv[++i];
         } else if (flag == "--dump" && has_value) {
@@ -547,6 +583,115 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         say(paired == djivcam::ble::PairResult::AlreadyPaired ? "already paired" : "pairing approved");
+        if (ble_query) {  // the Wi-Fi state as the camera sees it, without waking (and so changing) it
+            camera->set_log_camera_requests(true);
+            for (const auto& [cmd_id, what] : {std::pair{0x39, "Wi-Fi mode"}, std::pair{0x07, "network name"},
+                                               std::pair{0x0A, "signal"}, std::pair{0x44, "band"}}) {
+                const auto reply = camera->request(djivcam::duml::kAddrWifi, 0x07, static_cast<std::uint8_t>(cmd_id), {}, 3s);
+                say(std::string(what) + ": " + (reply ? reply->describe() : std::string("no reply")));
+            }
+            camera->disconnect();
+            return 0;
+        }
+        if (!join_network_file.empty()) {
+            // DJI's dji_wifi_switch_sta_and_connect: the camera turns from access point into a client
+            // of this network. Payload: the name and the password, each a length byte plus its bytes.
+            std::ifstream in(join_network_file);
+            std::string ssid;
+            std::string password;
+            std::getline(in, ssid);
+            std::getline(in, password);
+            for (std::string* text : {&ssid, &password}) {
+                if (!text->empty() && text->back() == '\r') {
+                    text->pop_back();
+                }
+            }
+            if (ssid.empty() || ssid.size() > 32 || password.size() > 63) {
+                say("--join-network: expected a network name (up to 32 bytes) and a password (up to 63)");
+                return 1;
+            }
+            camera->set_log_camera_requests(true);  // what the camera says while it joins
+            const auto mac = camera->request(djivcam::duml::kAddrWifi, 0x07, 0x0C, {}, 2s);
+            say("camera Wi-Fi MAC (to find it on the network): " + (mac ? mac->describe() : std::string("no reply")));
+            // DJI Mimo's order (its livestream setup, captured 2026-09-26): no Wi-Fi wake; the Live
+            // Streaming mode (0x02/0xE1 1a) and its two queries; a Wi-Fi scan (0x07/0xAB to 0x1B)
+            // until the camera pushes the results (0x07/0xAC); then the join. The join needs the Live
+            // Streaming mode (outside it: answer 01 ff, sent late); the scan is optional.
+            if (live_mode) {
+                const auto mode = camera->request(0x08, 0x02, 0xE1, {0x1A}, 5s);
+                say("Live Streaming mode: " + (mode ? mode->describe() : std::string("no reply")));
+                camera->request(0x08, 0x02, 0x8E, {0x00, 0x01, 0x1C, 0x00}, 1s);
+                camera->request(0x08, 0x08, 0x79, {0x01}, 1s);
+            }
+            if (live_resolution) {  // before the join: the stop also ends the network join
+                // The livestream settings the camera stores come from the start command (0x08/0x78);
+                // a start to a closed port is accepted and stores them. DJI Mimo's layout (captured
+                // 2026-09-26): 01 8a 00 <resolution> <kbit/s u16> fe 01 00 00 00 00 7f 00, then JSON.
+                const bool full_hd = live_resolution == 1080;
+                const std::uint16_t kbps = full_hd ? 6000 : 4000;
+                djivcam::duml::Bytes start = {0x01, 0x8A, 0x00, static_cast<std::uint8_t>(full_hd ? 0x0A : 0x04),
+                                              static_cast<std::uint8_t>(kbps & 0xFF), static_cast<std::uint8_t>(kbps >> 8),
+                                              0xFE, 0x01, 0x00, 0x00, 0x00, 0x00, 0x7F, 0x00};
+                std::string url;
+                for (char c : live_url) {
+                    url += c == '/' ? std::string("\\/") : std::string(1, c);  // escaped as DJI Mimo does
+                }
+                const std::string json = "{\"rtmpAddress\":\"" + url +
+                                         "\",\"watermark\":0,\"codec\":\"\",\"EnhancedRTMP\":false,\"supportStopLive\":false}";
+                start.insert(start.end(), json.begin(), json.end());
+                const auto started = camera->request(0x08, 0x08, 0x78, start, 10s);
+                say("livestream start (" + std::to_string(live_resolution) + "p, " + live_url + "): " +
+                    (started ? started->describe() : std::string("no reply")));
+                std::this_thread::sleep_for(3s);
+                const auto stopped = camera->request(0x08, 0x02, 0x8E, {0x01, 0x01, 0x1A, 0x00, 0x01, 0x02}, 5s);
+                say("livestream stop: " + (stopped ? stopped->describe() : std::string("no reply")));
+                const auto stored = camera->request(0x08, 0x08, 0x79, {0x01}, 5s);
+                if (stored && stored->payload.size() >= 7) {
+                    const auto& p = stored->payload;
+                    say("stored livestream settings: resolution byte " + std::to_string(p[4]) + ", " +
+                        std::to_string(p[5] | (p[6] << 8)) + " kbit/s");
+                } else {
+                    say("stored livestream settings: no reply");
+                }
+                // The stop also leaves Live Streaming mode, which the join needs.
+                const auto again = camera->request(0x08, 0x02, 0xE1, {0x1A}, 5s);
+                say("Live Streaming mode again: " + (again ? again->describe() : std::string("no reply")));
+            }
+            std::optional<djivcam::duml::Frame> results;
+            for (int attempt = 0; attempt < (join_scan ? 4 : 0) && !results; ++attempt) {
+                const auto scan = camera->request(0x1B, 0x07, 0xAB, {}, 3s);
+                say("Wi-Fi scan: " + (scan ? scan->describe() : std::string("no reply")));
+                results = camera->wait_for_camera_request(0x07, 0xAC, 6s);
+            }
+            if (join_scan) {
+                say(results ? "scan results: " + std::to_string(results->payload.size()) + " bytes (network names not shown)"
+                            : std::string("no scan results"));
+            }
+            djivcam::duml::Bytes payload;
+            for (const std::string* text : {&ssid, &password}) {
+                payload.push_back(static_cast<std::uint8_t>(text->size()));
+                payload.insert(payload.end(), text->begin(), text->end());
+            }
+            const auto reply = camera->request(djivcam::duml::kAddrWifi, 0x07, 0x47, payload, 30s);  // Mimo: ~1 s
+            say("joining '" + ssid + "' (password not shown): " + (reply ? reply->describe() : std::string("no reply")));
+            if (video_after_join && reply) {  // back to the normal Video mode (0x01), still joined?
+                std::this_thread::sleep_for(5s);
+                auto mode = camera->request(djivcam::duml::kAddrCamera, 0x02, 0xE1, {0x01}, 5s);
+                say("Video mode (to 01): " + (mode ? mode->describe() : std::string("no reply")));
+                if (!mode) {  // DJI Mimo switches to Live Streaming at 0x08
+                    mode = camera->request(0x08, 0x02, 0xE1, {0x01}, 5s);
+                    say("Video mode (to 08): " + (mode ? mode->describe() : std::string("no reply")));
+                }
+            }
+            // DJI Mimo keeps the Bluetooth link during its livestream: 0x00/0x2B 04 00 every 2.5 s.
+            for (const auto until = steady_clock::now() + std::chrono::seconds(join_hold_seconds); steady_clock::now() < until;) {
+                camera->request(djivcam::duml::kAddrSession, 0x00, 0x2B, {0x04, 0x00}, 100ms);
+                std::this_thread::sleep_for(2400ms);
+            }
+            camera->disconnect();
+            say("hung up Bluetooth");
+            return reply ? 0 : 1;
+        }
         const auto credentials = camera->wake_wifi();
         if (!credentials) {
             return 1;

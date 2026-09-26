@@ -60,9 +60,11 @@ struct CameraBle::Impl {
 
     std::mutex mutex;
     std::atomic<bool> answer_requests{false};  // as DJI Mimo
+    std::atomic<bool> log_camera_requests{false};
     std::condition_variable_any changed;
     duml::StreamParser parser;
     std::vector<duml::Frame> responses;  // unclaimed responses from the camera
+    std::deque<duml::Frame> camera_requests;  // the camera's own latest requests and pushes
     bool approved = false;
 
     std::deque<Bytes> outbox;  // frames for the writer thread
@@ -114,6 +116,16 @@ struct CameraBle::Impl {
         }
         for (duml::Frame& frame : frames) {
             if (frame.is_request()) {
+                if (log_camera_requests) {
+                    say("camera -> " + frame.describe());
+                }
+                {
+                    std::lock_guard lock(mutex);
+                    camera_requests.push_back(frame);
+                    if (camera_requests.size() > 64) {
+                        camera_requests.pop_front();
+                    }
+                }
                 const bool approval = frame.cmd_set == 0x07 && frame.cmd_id == 0x46;
                 if (approval) {
                     std::lock_guard lock(mutex);
@@ -152,6 +164,23 @@ struct CameraBle::Impl {
             return false;
         });
         return reply;
+    }
+
+    std::optional<duml::Frame> wait_for_camera_request(std::uint8_t cmd_set, std::uint8_t cmd_id,
+                                                       std::chrono::milliseconds timeout) {
+        std::unique_lock lock(mutex);
+        std::optional<duml::Frame> found;
+        changed.wait_for(lock, timeout, [&] {
+            for (auto it = camera_requests.begin(); it != camera_requests.end(); ++it) {
+                if (it->cmd_set == cmd_set && it->cmd_id == cmd_id) {
+                    found = std::move(*it);
+                    camera_requests.erase(it);
+                    return true;
+                }
+            }
+            return false;
+        });
+        return found;
     }
 };
 
@@ -279,6 +308,13 @@ std::optional<WifiCredentials> CameraBle::wake_wifi() {
 }
 
 void CameraBle::set_answer_requests(bool answer) { impl_->answer_requests = answer; }
+
+void CameraBle::set_log_camera_requests(bool log) { impl_->log_camera_requests = log; }
+
+std::optional<duml::Frame> CameraBle::wait_for_camera_request(std::uint8_t cmd_set, std::uint8_t cmd_id,
+                                                              std::chrono::milliseconds timeout) {
+    return impl_->wait_for_camera_request(cmd_set, cmd_id, timeout);
+}
 
 std::optional<duml::Frame> CameraBle::request(std::uint8_t receiver, std::uint8_t cmd_set, std::uint8_t cmd_id,
                                                duml::Bytes payload, std::chrono::milliseconds timeout) {
