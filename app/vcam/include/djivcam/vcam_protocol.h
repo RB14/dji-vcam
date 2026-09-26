@@ -18,16 +18,17 @@ inline constexpr wchar_t kSourceClsid[] = L"{87c6960c-3c27-4ce3-855d-c1f91a423df
 inline constexpr wchar_t kFriendlyName[] = L"DJI VCam";
 // The Frame Server (session 0) instance of the media source uses the Global section; instances loaded
 // inside a camera app (user session, e.g. DirectShow clients) read the app's session-local one.
-inline constexpr wchar_t kSectionName[] = L"Global\\dji-vcam-frames-v1";
-inline constexpr wchar_t kLocalSectionName[] = L"Local\\dji-vcam-frames-v1";
+// Named after the layout version: an app and a media source of different versions never share one.
+inline constexpr wchar_t kSectionName[] = L"Global\\dji-vcam-frames-v2";
+inline constexpr wchar_t kLocalSectionName[] = L"Local\\dji-vcam-frames-v2";
 // Authenticated users read/write (the app writes), Everyone read, AppContainer and
 // less-privileged AppContainer read (camera consumers such as the Windows Camera app, browsers).
 inline constexpr wchar_t kSectionSddl[] = L"D:P(A;;GRGW;;;AU)(A;;GR;;;WD)(A;;GR;;;AC)(A;;GR;;;S-1-15-2-2)";
 
 inline constexpr std::uint32_t kMagic = 0x43564A44;  // 'DJVC'
-inline constexpr std::uint32_t kVersion = 1;
-inline constexpr std::uint32_t kWidth = 1280;
-inline constexpr std::uint32_t kHeight = 720;
+inline constexpr std::uint32_t kVersion = 2;  // 2: 1920x1080 (1: 1280x720, until 0.1.0)
+inline constexpr std::uint32_t kWidth = 1920;
+inline constexpr std::uint32_t kHeight = 1080;
 inline constexpr std::uint32_t kFrameRate = 30;
 inline constexpr std::uint32_t kSlotCount = 3;
 inline constexpr std::size_t kHeaderSize = 4096;

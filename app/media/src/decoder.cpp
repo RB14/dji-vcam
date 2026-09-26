@@ -278,9 +278,9 @@ const std::uint8_t* Nv12Canvas::draw(const Nv12Frame& frame) {
     if (frame.width <= 0 || frame.height <= 0) {
         return d.canvas.data();
     }
-    // Keep the aspect ratio, shrink only if needed; NV12 needs even sizes and offsets.
-    const bool fits = frame.width <= d.width && frame.height <= d.height;
-    const double scale = fits ? 1.0 : std::min(static_cast<double>(d.width) / frame.width, static_cast<double>(d.height) / frame.height);
+    // Fill the canvas keeping the aspect ratio (a 720p feed grows to 1080p, 4:3 gets side bars); NV12
+    // needs even sizes and offsets.
+    const double scale = std::min(static_cast<double>(d.width) / frame.width, static_cast<double>(d.height) / frame.height);
     const int fitted_width = std::min(d.width, static_cast<int>(frame.width * scale) & ~1);
     const int fitted_height = std::min(d.height, static_cast<int>(frame.height * scale) & ~1);
     if (fitted_width < 2 || fitted_height < 2) {
@@ -298,7 +298,7 @@ const std::uint8_t* Nv12Canvas::draw(const Nv12Frame& frame) {
     std::uint8_t* chroma = d.canvas.data() + canvas_width * d.height + static_cast<std::size_t>(top / 2) * canvas_width + left;
     const std::uint8_t* source_luma = frame.data.data();
     const std::uint8_t* source_chroma = source_luma + static_cast<std::size_t>(frame.width) * frame.height;
-    if (fits) {
+    if (fitted_width == frame.width && fitted_height == frame.height) {  // only bars to add: a plain copy
         for (int row = 0; row < fitted_height; ++row) {
             std::memcpy(luma + canvas_width * row, source_luma + static_cast<std::size_t>(frame.width) * row, static_cast<std::size_t>(fitted_width));
         }

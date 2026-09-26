@@ -54,9 +54,8 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-// Fits frames into a fixed-size NV12 picture (the virtual camera's 1280x720), centered with black
-// bars when the aspect ratio differs (960x720 from a 4:3 live view) and scaled down only when a
-// frame is larger.
+// Fits frames into a fixed-size NV12 picture (the virtual camera's 1920x1080): scaled to fill it with
+// the aspect ratio kept, centered with black bars when the ratio differs (a 4:3 live view).
 class Nv12Canvas {
 public:
     Nv12Canvas(int width, int height);
