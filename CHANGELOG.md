@@ -5,6 +5,20 @@ releases". The ESP32-S3 bridge firmware has its own version, given with each rel
 
 ## Unreleased
 
+The camera on your Wi-Fi: no ESP32 board any more.
+
+- The camera joins your Wi-Fi network: over Bluetooth the app switches it to its Live Streaming
+  mode and has it join a network this computer is on, picked from the networks the camera hears or
+  typed (hidden networks); the password is kept encrypted for your Windows account.
+- The low-latency feed is now 1080p (the camera's live view in Live Streaming mode), with the same
+  ~135 ms delay.
+- New RTMP feed: the camera pushes RTMP to go2rtc, bundled with the app, and the app plays it
+  (~0.4 s behind); other apps can open it too (Options → Stream addresses).
+- The DJI VCam webcam is 1920x1080; smaller video is scaled up.
+- While connected, the shooting mode, format and codec controls are hidden (Live Streaming mode);
+  camera settings are changed on the low-latency feed.
+- Removed: the ESP32-S3 bridge (firmware, tools) and the camera access point channel option.
+
 ## 0.1.0 (2026-09-25)
 
 First public preview, for Windows 11 and the DJI Osmo Action 5 Pro (the only camera tested).

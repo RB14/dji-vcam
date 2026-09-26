@@ -1,11 +1,10 @@
 # Building DJI VCam
 
-The repository has three parts:
+The repository has two parts:
 
 | Part | Language / toolchain | Where |
 |---|---|---|
-| Desktop app (`dji-vcam`) | C++20, CMake, Qt 6.8, FFmpeg, C++/WinRT (Windows Bluetooth) | `app/` |
-| ESP32-S3 USB Wi-Fi bridge firmware | C, ESP-IDF 5.5 | `firmware/usb-wifi-bridge/` |
+| Desktop app (`dji-vcam`) | C++20, CMake, Qt 6.8, FFmpeg, C++/WinRT (Windows Bluetooth); bundles go2rtc | `app/` |
 | Research / test tools | Python 3.12 (Windows) | `tools/`, driven by `dji-vcam.sh` |
 
 ## Desktop app on Windows
@@ -24,14 +23,21 @@ Qt 6.8.3 (MSVC 2022, 64-bit) with the SerialPort module, via aqtinstall into you
 
 ```powershell
 python -m pip install aqtinstall
-python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtserialport -O $env:USERPROFILE\Qt
+python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O $env:USERPROFILE\Qt
 ```
 
 FFmpeg 8.1 LGPL shared development build (headers, import libraries and DLLs): download
 `ffmpeg-n8.1-latest-win64-lgpl-shared-8.1.zip` from
 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases) and extract it to
 `%USERPROFILE%\.dji-vcam\deps\ffmpeg` (so that `include\libavcodec\avcodec.h` exists there).
-From WSL, `app/scripts/setup-windows-deps.sh` does this for you.
+
+go2rtc 1.9.14, the RTMP server the app runs for its RTMP feed (MIT): extract `go2rtc_win64.zip`
+from [its release](https://github.com/AlexxIT/go2rtc/releases/tag/v1.9.14) to
+`%USERPROFILE%\.dji-vcam\deps\rtmp\go2rtc`. Without it the app builds and runs with the
+low-latency feed only.
+
+From WSL, `app/scripts/setup-windows-deps.sh` does both for you (pinned versions, checked
+against their SHA-256).
 
 GoogleTest (and on Linux SimpleBLE) are downloaded by CMake at configure time. Bluetooth on
 Windows uses the Windows SDK's C++/WinRT headers.
@@ -42,7 +48,8 @@ Windows uses the Windows SDK's C++/WinRT headers.
 cmake -S app -B build -G "Visual Studio 17 2022" -A x64 `
       -DDJIVCAM_BUILD_GUI=ON `
       -DCMAKE_PREFIX_PATH="$env:USERPROFILE\Qt\6.8.3\msvc2022_64" `
-      -DFFMPEG_DIR="$env:USERPROFILE\.dji-vcam\deps\ffmpeg"
+      -DFFMPEG_DIR="$env:USERPROFILE\.dji-vcam\deps\ffmpeg" `
+      -DDJIVCAM_GO2RTC_DIR="$env:USERPROFILE\.dji-vcam\deps\rtmp\go2rtc"
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
@@ -71,7 +78,7 @@ MSBuild cannot work from `\\wsl.localhost` paths, so the script mirrors `app/` t
 `%USERPROFILE%\.dji-vcam\src` and builds in `%USERPROFILE%\.dji-vcam\build`:
 
 ```bash
-app/scripts/setup-windows-deps.sh                                # FFmpeg, once
+app/scripts/setup-windows-deps.sh                                # FFmpeg and go2rtc, once
 app/scripts/build-windows.sh RelWithDebInfo -DDJIVCAM_BUILD_GUI=ON
 ```
 
@@ -86,11 +93,11 @@ This builds the Release configuration and writes to `binaries/` (git-ignored), n
 full version (see [Versions and releases](#versions-and-releases)):
 
 - `dji-vcam-<version>-x64.zip`: the portable app folder (Qt, FFmpeg and Visual C++ runtime
-  DLLs, the virtual camera's media source, the CLI, the user guide and license texts).
+  DLLs, the virtual camera's media source, go2rtc, the CLI, the user guide and license texts).
 - `dji-vcam-setup-<version>-x64.exe`: the installer, made from the same folder by
   `app/packaging/windows/dji-vcam.iss` (skipped when Inno Setup is not installed). It installs
-  into Program Files, registers the media source from there, adds a Windows Firewall rule for the
-  app and a Start-menu entry, and its uninstaller removes all of it (stopping the Windows camera
+  into Program Files, registers the media source from there, adds Windows Firewall rules for the
+  app (the low-latency feed) and for go2rtc on TCP 1935 (the RTMP feed) and a Start-menu entry, and its uninstaller removes all of it (stopping the Windows camera
   services first, since they keep the media source loaded).
 
 Packaging runs from WSL for now (a bash script); on Windows without WSL, build natively as above
@@ -107,8 +114,13 @@ and run the app from the build folder.
 - `./dji-vcam.sh fake-camera --video captures/liveview-<time>.bin` stands in for the camera's side
   of the datalink: it streams the recording, answers requests and keeps a small settings state
   with the documented status pushes. Point the app at it with the advanced setting
-  `connect/cameraIp` = `127.0.0.1` (registry `HKCU\Software\dji-vcam\dji-vcam\connect`, turn off
-  the Bluetooth and bridge options too) or `dji-vcam-cli --camera-ip 127.0.0.1`.
+  `connect/cameraIp` = `127.0.0.1` (registry `HKCU\Software\dji-vcam\dji-vcam\connect`; the app
+  then skips Bluetooth and plays the low-latency feed from there) or `dji-vcam-cli --camera-ip
+  127.0.0.1`.
+- `dji-vcam --stream URL` plays a network stream the way the RTMP feed does. To test the whole RTMP
+  path, run go2rtc with a local configuration, push a test pattern into it and play its RTSP
+  output: `ffmpeg -re -f lavfi -i testsrc2=size=1280x720:rate=30 -c:v libopenh264 -f flv
+  rtmp://127.0.0.1:1935/dji-vcam`, then `dji-vcam --stream rtsp://127.0.0.1:8554/dji-vcam`.
 - `dji-vcam-cli --ble-scan 10` lists the Bluetooth LE devices advertising nearby and marks DJI
   cameras (with their model byte).
 - `dji-vcam-cli --list-cameras` lists the cameras apps can see (Media Foundation);
@@ -126,15 +138,22 @@ dji-vcam-cli --seconds 30 --show-messages --send 01,02,8e,0100
 
 `--send receiver,cmd_set,cmd_id[,payload]` (hex, repeatable) is sent once streaming starts and
 its reply printed (`--send-early`: right after the live-view trigger, before any video);
-`--ble-send` sends one over Bluetooth right after the wake. `--show-messages` prints every message
+`--ble-send` sends one over Bluetooth right after the wake of the camera's access point. `--show-messages` prints every message
 the camera sends except the replies to the session's own keep-alives (`--show-all-messages`
 includes them). `--camera` follows the camera's settings through the app's camera controls and
 prints them whenever they change; `--camera-set Stabilization=3` (repeatable, codes from
 [camera-controls.md](camera-controls.md)) changes one the way the app's panel does.
 
-Connection experiments: `--reconnect-test 3,10,30` drops the session after streaming, stays
-silent for each number of seconds and reports whether video comes back; `--ble-hold` keeps the
-Bluetooth link open after the wake (the app hangs up, see protocol-notes.md 3.11);
+The camera on a Wi-Fi network (protocol-notes.md 3.13), as the app does it: `dji-vcam-cli --ble
+--join-network FILE --live-mode --no-scan --hold 300` switches the camera to Live Streaming mode,
+has it join the network in FILE (its name, then its password on the second line; never printed)
+and holds the Bluetooth link for 300 s; `--live-resolution 720|1080 URL` also stores livestream
+settings; `--find-mac MAC` finds the camera's address on the network, and `--camera-ip ADDRESS`
+then plays its live view. `--ble-query` shows the camera's Wi-Fi state without changing it.
+
+Experiments with the camera's own access point: `--reconnect-test 3,10,30` drops the session after
+streaming, stays silent for each number of seconds and reports whether video comes back;
+`--ble-hold` keeps the Bluetooth link open after the wake (protocol-notes.md 3.11);
 `--ble-release-test` times how long the camera takes to advertise again after a hang-up;
 `--wifi-channel N` moves the camera's access point to 2.4 GHz channel N;
 `--no-answer` / `--ble-answer` change whether the camera's own requests are answered on the
@@ -168,35 +187,6 @@ cmake --build build-core && ctest --test-dir build-core
 CMake options: `DJIVCAM_BUILD_GUI` (default OFF), `DJIVCAM_WITH_BLE` (default: same as the GUI),
 `DJIVCAM_BUILD_TESTS` (default ON).
 
-## ESP32-S3 bridge firmware
-
-Requires ESP-IDF v5.5 (`~/esp/esp-idf`, see Espressif's getting-started guide).
-
-```bash
-cd firmware/usb-wifi-bridge
-. ~/esp/esp-idf/export.sh
-idf.py build
-```
-
-- **First flash** (or recovery): hold **BOOT** while plugging the board's "USB" port in, then
-  `./dji-vcam.sh flash-bridge COM3` (the port of the "USB JTAG/serial debug unit").
-- **Updates** afterwards, with no buttons: `./dji-vcam.sh ota-bridge` (sends the image over the
-  bridge's USB console; unconfirmed images roll back automatically).
-
-**On Windows without WSL**: install ESP-IDF v5.5 with Espressif's
-[Windows installer](https://docs.espressif.com/projects/esp-idf/en/v5.5/esp32s3/get-started/windows-setup.html)
-and use its "ESP-IDF 5.5 PowerShell":
-
-```powershell
-cd firmware\usb-wifi-bridge
-idf.py build
-idf.py -p COM3 flash          # first flash: hold BOOT while plugging the board's "USB" port in
-```
-
-Updates without buttons: `python tools\bridge_ota.py --port COM8` (the bridge's console port; see
-[Python tools](#python-tools)). Without building anything, a release's firmware image can also be
-flashed from the browser: [installing.md](installing.md#flash-the-esp32-s3-bridge).
-
 ## Python tools
 
 `./dji-vcam.sh` creates a Windows virtual environment in `.venv`, installs `requirements.txt` and
@@ -208,7 +198,7 @@ and call a tool directly (`dji-vcam.sh` shows which script each command runs):
 ```powershell
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python tools\bridge_ota.py --port COM8     # e.g. ./dji-vcam.sh ota-bridge
+.venv\Scripts\python tools\dji_ble.py scan              # e.g. ./dji-vcam.sh ble scan
 ```
 
 ## Versions and releases
@@ -225,19 +215,15 @@ py -3.12 -m venv .venv
   `dji-vcam-cli --version`. Native builds read git themselves; the WSL-driven Windows build passes
   the version in (`-DDJIVCAM_VERSION=`), since it compiles a copy of the sources without git.
 - **Releases are git tags** `vX.Y.Z` with a GitHub release holding the x64 installer, the portable
-  ZIP, the bridge firmware image and their SHA-256 checksums. Only x64 is built: the app needs
-  Windows 11, which has no 32-bit edition, and the camera service that loads the webcam's media
-  source is 64-bit.
-- **The bridge firmware has its own version** (`PROJECT_VER` in
-  `firmware/usb-wifi-bridge/CMakeLists.txt`, shown by its `version` console command), named in the
-  image `dji-vcam-bridge-<version>-esp32s3.bin` and in each release.
+  ZIP and their SHA-256 checksums. Only x64 is built: the app needs Windows 11, which has no 32-bit
+  edition, and the camera service that loads the webcam's media source is 64-bit. (Releases up to
+  0.1.0 also carried the ESP32-S3 bridge firmware.)
 
 To publish a release:
 
 1. Move the changes from *Unreleased* in `CHANGELOG.md` to a section `## X.Y.Z (date)`, set
    `project(dji-vcam VERSION X.Y.Z)`, commit and push.
-2. Run `app/scripts/release-github.sh` from a shell where `idf.py` works (after ESP-IDF's
-   `export.sh`), with `gh` logged in. It tags HEAD `vX.Y.Z`, builds everything from it and creates
+2. Run `app/scripts/release-github.sh` with `gh` logged in. It tags HEAD `vX.Y.Z`, builds everything from it and creates
    the release with that changelog section as its notes.
 3. Start the next version: set `project()` to the next minor version, so that builds in between are
    named after it (`0.2.0-dev+g...`).

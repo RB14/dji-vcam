@@ -2,14 +2,14 @@
 
 Use a **DJI Osmo Action 5 Pro** as a wireless, low-latency camera on your computer: in **OBS** and,
 through a virtual webcam, in any other app. DJI VCam speaks the protocol the DJI Mimo app uses for
-its live preview, instead of the camera's RTMP push.
+its live preview, and can also take the camera's RTMP stream.
 
-> Status (2026-09-25): the Windows app connects with one click (Bluetooth wake, bridge setup,
-> live view), shows H.264 1280x720 at ~30 fps and ~3.5 Mbit/s, decoded on the GPU, with
-> **~135 ms glass-to-glass** latency, and offers it to other apps as the **DJI VCam** webcam. A
-> Camera settings panel exposes Mimo's controls (verified on the camera); a Windows installer is
-> built by `app/scripts/package-windows.sh`. Next: Linux and a USB Wi-Fi adapter as the network
-> link. See [docs/app-architecture.md](docs/app-architecture.md) and [docs/tasks.md](docs/tasks.md).
+> Status (2026-09-26): the Windows app puts the camera on your Wi-Fi network over Bluetooth and plays
+> its live view in **1080p** with **~135 ms glass-to-glass** latency, decoded on the GPU, or its RTMP
+> stream (~0.4 s) through a small RTMP server on this computer. Either one becomes the **DJI VCam**
+> webcam for other apps. No extra hardware: the ESP32-S3 bridge of 0.1.0 is gone. A Camera settings
+> panel exposes Mimo's controls; a Windows installer is built by `app/scripts/package-windows.sh`.
+> See [docs/app-architecture.md](docs/app-architecture.md) and [docs/tasks.md](docs/tasks.md).
 
 ## Requirements
 
@@ -18,21 +18,26 @@ its live preview, instead of the camera's RTMP push.
 
 | What | Why |
 |---|---|
-| **DJI Osmo Action 5 Pro**, activated once with DJI Mimo, its Wi-Fi band set to **2.4 GHz** | The camera the app is developed and tested with. The ESP32-S3 has no 5 GHz radio |
+| **DJI Osmo Action 5 Pro**, activated once with DJI Mimo | The camera the app is developed and tested with |
 | **Windows 11** | The webcam uses Windows 11's virtual camera API (Media Foundation `MFCreateVirtualCamera`), which Windows 10 does not have. Linux support is in progress |
-| **Bluetooth LE** on the computer | The camera's Wi-Fi is off until an app wakes it over Bluetooth. The same short Bluetooth session pairs the computer with the camera (one approval on the camera screen) and reads the camera's Wi-Fi password; the app hangs up right after, as DJI Mimo does. A desktop without Bluetooth needs a USB Bluetooth adapter (any adapter Windows supports should do; not tested yet) |
-| **ESP32-S3 board** flashed with [`firmware/usb-wifi-bridge`](firmware/usb-wifi-bridge/README.md), plugged in through its native "USB" port | Connects the computer to the camera's Wi-Fi, see below. Developed on an ESP32-S3-DevKitC-1 **N16R8** (16 MB flash, 8 MB octal PSRAM); other variants need a change in the firmware configuration |
+| **Bluetooth LE** on the computer | Pairs the computer with the camera (one approval on the camera screen), switches the camera to its Live Streaming mode and tells it which Wi-Fi network to join. The link stays up while connected: the camera leaves the network when it ends. A desktop without Bluetooth needs a USB Bluetooth adapter (any adapter Windows supports should do; not tested yet) |
+| **A Wi-Fi network the camera and this computer share** | The camera joins it; the computer can be on it over Wi-Fi or Ethernet. Not a guest network that keeps its devices apart. 2.4 GHz (5 GHz is not tested yet) |
 | A GPU (optional) | Decoding uses the GPU when there is one (D3D11VA), else the CPU |
 
-### Why an ESP32 board?
+### How the camera connects
 
-The camera sends its live view only over its **own Wi-Fi access point**, so the computer has to join
-that network. A computer's Wi-Fi card joins one network at a time: joining the camera with it would
-cut the computer off the internet (unless it also has Ethernet), which is not what you want while
-streaming or in a call. Instead, the ESP32-S3 joins the camera's network and shows up on USB as a
-network adapter, so the computer keeps its own Wi-Fi for the internet. The board also strips the
-router and DNS settings from the camera's replies, so no internet traffic is ever sent to the
-camera. Other ways to reach the camera are on the [TODO list](#todo).
+The camera normally offers its live view only on its **own Wi-Fi access point**. In its Live
+Streaming mode, the one DJI Mimo uses for RTMP livestreams, it instead joins an existing network,
+and its live view works there too (in 1080p). So DJI VCam asks it over Bluetooth to switch to that
+mode and join your network, finds it there, and plays either:
+
+- the **low-latency feed**: the camera's live view, the protocol DJI Mimo uses for its preview
+  (~0.15 s behind, 1080p); or
+- the **RTMP feed**: the camera pushes RTMP to the RTMP server bundled with the app (go2rtc), which
+  other apps (OBS, VLC) can open too (~0.4 s behind: the camera buffers its livestream).
+
+Your computer keeps its internet connection, and no extra hardware is involved. While connected,
+the camera shows "Preparing to live stream" and does not record.
 
 ### Other DJI cameras
 
@@ -46,17 +51,17 @@ Reports are welcome.
 
 ## Installation
 
-1. **Download** the installer `dji-vcam-setup-<version>-x64.exe` and the bridge firmware
-   `dji-vcam-bridge-<version>-esp32s3.bin` from the
+1. **Download** `dji-vcam-setup-<version>-x64.exe` from the
    [latest release](https://github.com/RB14/dji-vcam/releases/latest).
-2. **Flash the ESP32-S3 board** in Chrome or Edge, no tools to install: hold its BOOT button while
-   plugging its "USB" port in, open [Espressif's web flasher](https://espressif.github.io/esptool-js/),
-   Connect, Flash Address `0x0`, choose the firmware file, Program; then plug the board in again.
-3. **Run the installer** and approve the administrator prompt (it is not code-signed yet: if
-   SmartScreen warns, *More info → Run anyway*). It installs the app and the **DJI VCam** webcam.
-4. **Prepare the camera**: activate it once with DJI Mimo, set its Wi-Fi band to 2.4 GHz, keep it on.
-5. **Start DJI VCam and click Connect**: approve the pairing request on the camera screen the first
-   time. The live view appears, and apps can pick the **DJI VCam** webcam.
+2. **Run the installer** and approve the administrator prompt (it is not code-signed yet: if
+   SmartScreen warns, *More info → Run anyway*). It installs the app, the **DJI VCam** webcam and
+   the firewall rules the camera's video needs.
+3. **Prepare the camera**: activate it once with DJI Mimo, then keep it on.
+4. **Start DJI VCam and click Connect**: approve the pairing request on the camera screen the first
+   time, then pick the Wi-Fi network for the camera and enter its password. The live view appears,
+   and apps can pick the **DJI VCam** webcam.
+5. **Choose the feed** in the toolbar: *low latency*, or *RTMP* (its address for other apps is under
+   *Options → Stream addresses*).
 
 Step by step, with every option and troubleshooting: [docs/installing.md](docs/installing.md). To
 build from source instead: [docs/building.md](docs/building.md).
@@ -66,50 +71,48 @@ build from source instead: [docs/building.md](docs/building.md).
 | Document | For |
 |---|---|
 | [docs/installing.md](docs/installing.md) | Installing and using the app |
-| [docs/building.md](docs/building.md) | Building the app, the bridge firmware and the tools |
+| [docs/building.md](docs/building.md) | Building the app and the tools |
 | [docs/app-architecture.md](docs/app-architecture.md) | Architecture, milestones, open questions |
 | [docs/protocol-notes.md](docs/protocol-notes.md) | The camera protocol: Bluetooth, datalink, live view, findings |
 | [docs/camera-controls.md](docs/camera-controls.md) | Camera settings over DUML: every Mimo control, status topics, experiments |
 | [docs/tasks.md](docs/tasks.md) | The living task list |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
-| [firmware/usb-wifi-bridge/README.md](firmware/usb-wifi-bridge/README.md) | The ESP32-S3 USB Wi-Fi bridge |
 
 ## How it works
 
 ```
- DJI VCam app (laptop, stays on home Wi-Fi for internet)
-   ▲                ▲
-   │ Bluetooth      │ USB-C: network adapter + console
-   │                ESP32-S3 USB Wi-Fi bridge  ── 2.4 GHz Wi-Fi ──▶  camera's own AP (192.168.2.1)
-   └─ pair, wake the camera's Wi-Fi, read its credentials ─────────────┘
+                   Bluetooth: pair, Live Streaming mode, join the network, keep-alive
+ DJI VCam app  ◄──────────────────────────────────────────────────────────────►  camera
+      ▲                                                                            │
+      │                     your Wi-Fi network (the camera joins it)               │
+      ├── low-latency feed: the camera's live view (UDP 9004)  ◄───────────────────┤
+      └── RTMP feed: go2rtc on this computer (RTMP in, RTSP out)  ◄── RTMP push ───┘
+   either feed ──► GPU decode ──► preview + the DJI VCam webcam (1080p)
 ```
 
 - **Bluetooth LE** (DUML frames on `fff4`/`fff5`) pairs with the camera (one on-camera approval),
-  wakes its Wi-Fi access point and reads the AP credentials.
-- The camera's **own AP** carries the Mimo datalink: UDP 9004 with DUML commands and the live-view
-  video (H.264 in datagrams of type `0x02`).
-- The laptop keeps its own Wi-Fi for the internet, so an **ESP32-S3** joins the camera AP and shows
-  up as a USB network adapter. It strips router/DNS options from the camera's DHCP replies so the
-  laptop never routes internet traffic through the camera. A second USB Wi-Fi adapter will be an
-  alternative.
+  switches it to Live Streaming mode and has it join the network (docs/protocol-notes.md 3.13).
+  The app keeps the link up with DJI Mimo's keep-alive; the camera leaves the network without it.
+- The app finds the camera's address on the network from its Wi-Fi MAC.
+- The **low-latency feed** is the datalink DJI Mimo uses for its preview: UDP 9004 with DUML
+  commands and the video (H.264 in datagrams of type `0x02`).
+- For the **RTMP feed**, the camera pushes RTMP to go2rtc, run by the app; the app plays go2rtc's
+  RTSP output, showing each frame as soon as it is decoded.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `app/` | The desktop app (C++20, Qt 6): `core/` protocol, `ble/` Bluetooth, `media/` GPU decoding, `gui/`, `cli/`, `tests/` |
-| `firmware/usb-wifi-bridge/` | ESP-IDF firmware for the ESP32-S3 USB Wi-Fi bridge (OTA-updatable) |
+| `app/` | The desktop app (C++20, Qt 6): `core/` protocol, `ble/` Bluetooth, `media/` GPU decoding and the RTMP player, `gui/`, `cli/`, `tests/` |
 | `tools/` | Python research and test tools (the reference implementation) |
-| `dji-vcam.sh` | Entry point for the Python tools and bridge flashing |
+| `dji-vcam.sh` | Entry point for the Python tools |
 | `docs/` | Guides, architecture, protocol notes, reference lists from the Mimo APK |
 
 ## Quick start (developers)
 
 ```bash
-app/scripts/setup-windows-deps.sh                                  # FFmpeg for Windows, once
+app/scripts/setup-windows-deps.sh                                  # FFmpeg and go2rtc for Windows, once
 app/scripts/build-windows.sh RelWithDebInfo -DDJIVCAM_BUILD_GUI=ON  # app + tests with MSVC
-./dji-vcam.sh ota-bridge                                            # update the bridge firmware
-./dji-vcam.sh live --play                                           # Python reference live view
 ```
 
 Details and all prerequisites: [docs/building.md](docs/building.md).
@@ -118,35 +121,32 @@ Details and all prerequisites: [docs/building.md](docs/building.md).
 
 What is still missing (the full list: [docs/tasks.md](docs/tasks.md)):
 
-- **Reach the camera without the ESP32 board**
-  - With a **second USB Wi-Fi adapter**: the app joins the camera's network on it and keeps the
-    internet on the computer's own Wi-Fi.
-  - With the **computer's own Wi-Fi**: join the camera's network directly. The computer then has no
-    Wi-Fi internet while the camera is connected (fine with Ethernet, or when no internet is
-    needed), but it needs no extra hardware at all.
-- **Bluetooth from the ESP32 board**: the ESP32-S3 has Bluetooth LE too. Waking the camera from the
-  board would make Bluetooth on the computer unnecessary (desktops).
+- **Camera settings on the RTMP feed**: today they are changed on the low-latency feed; they could
+  go over the Bluetooth link the app holds anyway.
+- **Always stream RTMP**: the camera's screens only time out while it streams, and both feeds at
+  once would switch instantly. To decide once heat and battery are measured.
+- **Without a Wi-Fi network**: let this computer start its own hotspot (Windows Mobile Hotspot) for
+  the camera, e.g. outdoors.
+- **5 GHz networks**: not tested yet.
 - **Other DJI cameras**: test the Osmo Action 4 and 6, the Osmo 360 and the Pocket 3; prefer known
   camera models when several DJI devices are around (today the first DJI device heard is used,
   which could be a DJI Mic).
-- **1080p**: the live view is the camera's 1280x720 preview at 30 fps; the camera's RTMP mode
-  reaches 1080p.
-- **Linux**: Bluetooth over BlueZ, a v4l2loopback virtual webcam, the network link.
+- **Linux**: Bluetooth over BlueZ, a v4l2loopback virtual webcam.
 - **Camera controls**: the remaining DJI Mimo settings (timelapse and hyperlapse, slow motion, photo
   options, audio, AE lock, spot metering, HDR) and status (temperature, timecode).
 - **Code signing**: the installer is not signed yet, so Windows SmartScreen warns on first run.
 - **ARM64**: a build for Windows 11 on ARM (Snapdragon laptops); only x64 is built today.
 - **Windows-only tooling**: packaging and the tools wrapper are bash scripts run from WSL; the app
-  and the firmware already build natively on Windows.
+  already builds natively on Windows.
 - **Latency**: hand the decoded GPU frames to the preview and the webcam without copies.
 
 ## License
 
 MIT, see [LICENSE](LICENSE). Third-party components keep their own licenses: Qt (LGPL-3.0) and
 FFmpeg (LGPL-2.1-or-later), both dynamically linked; the virtual camera's media source is adapted
-from VCamSample (MIT) and uses the Windows Implementation Libraries (MIT); on Linux the build
-fetches SimpleBLE (BUSL-1.1) until our own BlueZ code replaces it. The Windows packages carry the
-license texts in `licenses/`.
+from VCamSample (MIT) and uses the Windows Implementation Libraries (MIT); the RTMP feed's server is
+go2rtc (MIT), bundled as a separate program; on Linux the build fetches SimpleBLE (BUSL-1.1) until
+our own BlueZ code replaces it. The Windows packages carry the license texts in `licenses/`.
 
 DJI, Osmo and Mimo are trademarks of SZ DJI Technology Co., Ltd. This project is not affiliated
 with or endorsed by DJI.

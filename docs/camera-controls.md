@@ -636,6 +636,25 @@ Real 1080p paths [EXTERNAL DJI]:
 2. **UVC webcam** over USB, mode `0x23`: up to 1080p30 MJPG (Magewell KB 0008020015).
 3. **USB-C DisplayPort** output: 4K from firmware 01.02.03.30 (A5P release notes).
 
+**Answer [VERIFIED-CAPTURE 2026-09-26]: in Live Streaming mode, on a network it joined
+(protocol-notes.md 3.13), the preview itself is 1920x1080 at 30 fps (~3.6-4.1 Mbit/s)**, whatever
+livestream resolution the camera stores; the app uses that since 0.2.0. The RTMP push's own
+resolution and bitrate come from its start command (`08/78`: 720p/4000 or 1080p/6000 as DJI Mimo
+offers them; Mimo's A5P layout uses the JSON form, not Moblin's `0x2A`/`0x2E` bytes).
+
+### 3.13 Settings in Live Streaming mode
+
+The app keeps the camera in Live Streaming mode (`02/E1 1a`) while connected, which changes what
+the settings mean:
+
+| Setting | In Live Streaming mode |
+|---|---|
+| Mode (`02/E1`) | Hidden: Video mode (`02/E1 01` to `0x08`) ends the network join; at `0x01` no answer |
+| Resolution / frame rate | Hidden: the list shows the livestream's format only, changes snap back |
+| Stabilization | Works (a change was accepted and applied on 2026-09-26) |
+| Record, photo, codec | Hidden: unverified |
+| FOV, exposure, white balance, colour | Shown; to check in the test session (docs/tasks.md) |
+
 ---
 
 ## 4. How to apply a setting safely

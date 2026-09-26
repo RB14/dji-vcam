@@ -180,6 +180,10 @@ Receivers: `0x07` = WiFi subsystem, `0xF0`/`0x1C` = session endpoints. Every wri
 
 ## (b) Wi-Fi / UDP datalink
 
+> Up to 3.12, the measurements were made with the camera on its own access point, reached through
+> the ESP32-S3 USB bridge (the app's network link until 0.1.0). Since 0.2.0 the camera joins your
+> network instead (3.13); the datalink is the same.
+
 ### 3.1 Ports
 
 | body | datalink | TCP-7001 poke | evidence |

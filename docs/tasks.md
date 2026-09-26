@@ -13,8 +13,9 @@ Decisions (2026-09-26):
 - **Two feeds**: the low-latency preview (our DJI protocol) or RTMP (camera -> RTMP server on this
   PC -> our player, optimised for delay but decoding every frame). RTMP runs only when chosen for
   now; "always stream RTMP" (screens time out, instant switching) is decided after the test session.
-- **RTMP server behind an interface**, with go2rtc (7 MB) and MediaMTX (26 MB) backends; the test
-  session decides which one ships (go2rtc if DJI's RTMP client works with it).
+- **RTMP server behind an interface**, implemented with go2rtc only (7 MB download, ~20 MB against
+  MediaMTX's ~57 MB); MediaMTX (proven with DJI's RTMP client on 2026-09-26) is the fallback if
+  go2rtc does not take the camera's stream.
 - **The ESP32 goes completely** (code, firmware, tools, docs); it stays in git history and v0.1.0.
 - **Networks**: the camera's own scan list plus manual entry (hidden networks); a PC-hotspot mode is
   for later.
@@ -22,28 +23,32 @@ Decisions (2026-09-26):
   for other apps; the webcam becomes 1080p.
 
 Phases:
-- [~] 0. Groundwork: experiment CLI (`--join-network` & co.), the recipe in protocol-notes.md 3.13
-- [ ] 1. Core protocol (unit-tested builders/parsers: join, start/stop, stored settings, network
-      list) and the Bluetooth live session (pair, Live Streaming mode, join, optional RTMP start,
-      held link with keep-alive, recovery after power-off or link loss, Video mode on disconnect)
-- [ ] 2. RTMP server interface + go2rtc / MediaMTX backends; RTMP player into the GPU pipeline;
-      the camera's address from its RTMP connection or by MAC
-- [ ] 3. App: network picker (scan list, manual entry, password kept with Windows DPAPI), feed
-      switch, RTMP quality, "Stream address" panel, settings filtered to Live Streaming mode
-- [ ] 4. Webcam in 1080p
-- [ ] 5. Remove the ESP32: bridge code, the access-point channel feature, bridge options,
-      `firmware/`, bridge tools and wrapper commands
-- [ ] 6. Docs overhaul: README, installing.md, protocol-notes, camera-controls (Live Streaming
-      settings matrix), app-architecture, building, CHANGELOG
-- [ ] 7. Installer (bundle the chosen server + license, firewall for RTMP), merge, release 0.2.0
+- [x] 0. Groundwork: experiment CLI (`--join-network` & co.), the recipe in protocol-notes.md 3.13
+- [x] 1. Core protocol (live_stream, live_session with a scripted-camera test, the camera found by
+      its MAC) and the Bluetooth live session in the app (CameraConnector: Live Streaming mode,
+      join, optional RTMP push, held link, starting over when the link is lost, Video mode on stop)
+- [x] 2. RTMP server interface + go2rtc; the RTMP player (network_stream) into the GPU pipeline;
+      checked end to end without the camera (go2rtc on loopback, a test pattern, `--stream`)
+- [x] 3. App: network dialog (scan list, hidden networks, DPAPI-protected password), feed choice,
+      RTMP quality, Stream addresses, settings panel limited to Live Streaming mode
+- [x] 4. Webcam in 1080p (shared layout version 2)
+- [x] 5. The ESP32 removed: bridge code, the access-point channel feature, `firmware/`, tools
+- [~] 6. Docs overhaul: README, installing.md, app-architecture, building, tasks, CHANGELOG;
+      camera-controls' Live Streaming matrix after the test session
+- [~] 7. Installer (go2rtc + license, firewall rule for RTMP); merge and release 0.2.0 after the test
+      session
+- [ ] Camera settings on the RTMP feed, over the Bluetooth link the app holds anyway
 
 Test session with the camera (after phase 5):
-- [ ] go2rtc vs MediaMTX with DJI's RTMP client; delay and accuracy of the RTMP feed
+- [ ] The whole app flow on the camera: network dialog, join, the camera found by its MAC, both
+      feeds, switching between them, Disconnect back to Video mode
+- [ ] go2rtc with DJI's RTMP client (else MediaMTX); delay and accuracy of the RTMP feed
 - [ ] Screens time out with our RTMP; both feeds at once: delay, heat (the camera's temperature
       level in the 0x1D/0x02 status push), battery over 30 min vs the access-point mode
 - [ ] Which camera settings work in Live Streaming mode; can it record meanwhile
 - [ ] 5 GHz networks; the network list's flag byte
 - [ ] Power-off, sleep and Bluetooth loss: the session rebuilds itself
+- [ ] The 1080p webcam (new media source: install), in Windows Camera, Chrome and OBS
 - [ ] Full install on a clean profile
 
 ## Test plan with the camera (started 2026-09-25)
@@ -112,26 +117,24 @@ Test session with the camera (after phase 5):
 
 ## Later
 
-- [ ] Linux: v4l2loopback virtual camera, BlueZ, NetworkManager link; test on a real Linux machine
-- [ ] Built-in Wi-Fi link: join the camera AP with the computer's own Wi-Fi (no bridge; no Wi-Fi
-      internet while connected, fine with Ethernet)
-- [ ] Bluetooth wake from the ESP32 bridge (the S3 has BLE): no Bluetooth needed on the computer
+- [ ] Linux: v4l2loopback virtual camera, BlueZ; test on a real Linux machine
+- [ ] Without a Wi-Fi network: start this computer's own hotspot (Windows Mobile Hotspot) and put
+      the camera on it (outdoors, no router)
+- [ ] Always stream RTMP (screens time out, both feeds at once): decide after the test session
 - [ ] Other camera models: test the Action 4/6, Osmo 360, Pocket 3 (the app names them, only 0x15
       tested); prefer known camera models in the Bluetooth search (a DJI Mic could be picked first)
 - [x] Versions and releases: SemVer in `project()`, full version from git (`0.1.0-dev+g<commit>`)
       in file names, version resources, About and `--version`; `release-github.sh` publishes the
-      installer, ZIP, bridge firmware image and checksums (v0.1.0, 2026-09-25)
+      installer, ZIP and checksums (v0.1.0, 2026-09-25, also with the bridge firmware)
 - [ ] Code-signed installer (SmartScreen warns today)
 - [ ] ARM64 build (Windows 11 on ARM): Qt and FFmpeg have ARM64 builds; the media source must be
       ARM64 too. No 32-bit build: Windows 11 has no 32-bit edition
 - [ ] Packaging and the tools wrapper in PowerShell too (they need WSL today)
 - [ ] `update-vcam-source.ps1` still swaps the ProgramData copy; the installer registers the DLL
       from Program Files
-- [ ] Wi-Fi adapter link: detect a second adapter, join the camera AP on it, keep internet routing;
-      a 5 GHz USB dongle is the way to 5 GHz (the ESP32-C5 has no usable USB device mode in ESP-IDF,
-      so it cannot replace the S3 as a USB network adapter)
-- [ ] 1080p30: try the camera's RTMP mode (proven 1080p) received by the app; first the cheap
-      live-view experiments 4 and 8 of camera-controls.md (09/A8 enable, stream-quality parameter)
+- [x] ~~Wi-Fi adapter link~~, ~~built-in Wi-Fi link~~, ~~Bluetooth from the ESP32~~: replaced by the
+      camera joining your network (2026-09-26)
+- [x] 1080p: the live view is 1080p in Live Streaming mode; the RTMP feed too (2026-09-26)
 - [ ] Latency: hand GPU frames to preview / virtual camera without CPU copies
 - [ ] Optional OBS "direct mode" plugin reusing the core
 - [ ] Multi-app webcam: check that Windows 11's "Allow multiple apps" (Settings → Cameras → DJI VCam
