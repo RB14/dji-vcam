@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(dji-vcam VERSION 0.2.0 DESCRIPTION "DJI Osmo Action live view as a virtual camera" LANGUAGES CXX)
+project(dji-vcam VERSION 0.3.0 DESCRIPTION "DJI Osmo Action live view as a virtual camera" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
