@@ -93,7 +93,7 @@ another server replaces it by implementing the same few methods.
    `core` camera_protocol and camera_controller, the GUI's Camera settings panel and the CLI's
    `--camera` / `--camera-set`; verified on the camera both ways (2026-09-25). In Live Streaming
    mode the shooting mode, format and codec are hidden; on the RTMP feed the settings go over the
-   Bluetooth link, as in DJI Mimo during a livestream.
+   Bluetooth link, where the camera takes only its parameter settings (camera-controls.md 3.13).
 
 ## Open questions
 

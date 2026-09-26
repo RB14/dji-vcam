@@ -11,11 +11,16 @@ public:
     Go2RtcServer(QString program, QObject* parent) : RtmpServer(std::move(program), parent) {}
 
     QString name() const override { return QStringLiteral("go2rtc"); }
-    QString ingestUrl(const QString& host) const override {
-        return QStringLiteral("rtmp://%1:%2/%3").arg(host).arg(kRtmpPort).arg(streamName());
+    // An RTMP address has an application and a stream key (DJI Mimo: /live/osmo), and the camera
+    // does not connect to one without a key; go2rtc names the stream after the application.
+    QString ingestUrl(const QString& host, bool with_port = true) const override {
+        return with_port ? QStringLiteral("rtmp://%1:%2/%3/vcam").arg(host).arg(kRtmpPort).arg(streamName())
+                         : QStringLiteral("rtmp://%1/%2/vcam").arg(host, streamName());
     }
     QString playbackUrl() const override { return QStringLiteral("rtsp://127.0.0.1:%1/%2").arg(kRtspPort).arg(streamName()); }
-    QStringList shareUrls() const override { return {playbackUrl(), ingestUrl(QStringLiteral("127.0.0.1"))}; }
+    QStringList shareUrls() const override {
+        return {playbackUrl(), QStringLiteral("rtmp://127.0.0.1:%1/%2").arg(kRtmpPort).arg(streamName())};
+    }
 
 protected:
     QByteArray configuration() const override {

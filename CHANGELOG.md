@@ -16,7 +16,8 @@ The camera on your Wi-Fi: no ESP32 board any more.
   (~0.4 s behind); other apps can open it too (Options → Stream addresses).
 - The DJI VCam webcam is 1920x1080; smaller video is scaled up.
 - While connected, the shooting mode, format and codec controls are hidden (Live Streaming mode).
-  The camera settings work on both feeds: on the RTMP feed they go over Bluetooth, as in DJI Mimo.
+  On the RTMP feed the settings go over Bluetooth, where the camera takes stabilization, scene, FOV
+  and the auto ISO limit; exposure and color are changed on the low-latency feed.
 - The manual shutter list stops at the frame rate (1/30 at 30 fps), the slowest the camera takes.
 - Removed: the ESP32-S3 bridge (firmware, tools) and the camera access point channel option.
 

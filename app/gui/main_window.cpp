@@ -662,6 +662,7 @@ void MainWindow::startLowLatency() {
     settings_over_bluetooth_ = false;
     connector_->setCameraControl(false);  // the live view's connection carries them
     pipeline_->start(config, static_cast<DecoderPreference>(decoder_choice_->currentData().toInt()));
+    camera_panel_->setParametersOnly(false);  // the live view's connection carries every setting
     camera_panel_->setController(pipeline_->camera());
 }
 
@@ -682,19 +683,32 @@ void MainWindow::startRtmp() {
         return;
     }
     camera_panel_->setController(nullptr);
-    camera_panel_->setUnavailable({});
-    settings_over_bluetooth_ = true;
-    connector_->setCameraControl(true);
-    camera_panel_->setController(connector_->camera());
+    enableBluetoothSettings();
     if (!rtmp_requested_) {
         const RtmpQuality& quality = rtmp_quality(settings_->value(kRtmpResolutionKey, 1080).toInt());
-        const QString url = rtmp_->ingestUrl(QString::fromStdString(*host));
-        qInfo("rtmp: asking the camera to push %dp at %u kbit/s to %s", quality.resolution, quality.kbps, qPrintable(url));
-        connector_->startStream({quality.code, quality.kbps, url.toStdString()});
+        const QString local = QString::fromStdString(*host);
+        djivcam::live::StreamSettings stream{quality.code, quality.kbps, rtmp_->ingestUrl(local).toStdString()};
+        if (!djivcam::live::fits(stream)) {
+            stream.url = rtmp_->ingestUrl(local, false).toStdString();  // the camera takes ~35 characters
+        }
+        if (!djivcam::live::fits(stream)) {
+            showStage(tr("This computer's address is too long for the camera's RTMP settings"), true);
+            return;
+        }
+        qInfo("rtmp: asking the camera to push %dp at %u kbit/s to %s", quality.resolution, quality.kbps, stream.url.c_str());
+        connector_->startStream(stream);
         rtmp_requested_ = true;
     }
     showStage(tr("Starting the camera's RTMP stream"));
     pipeline_->startStream(rtmp_->playbackUrl(), static_cast<DecoderPreference>(decoder_choice_->currentData().toInt()));
+}
+
+void MainWindow::enableBluetoothSettings() {  // the RTMP feed
+    camera_panel_->setUnavailable({});
+    camera_panel_->setParametersOnly(true);
+    settings_over_bluetooth_ = true;
+    connector_->setCameraControl(true);
+    camera_panel_->setController(connector_->camera());
 }
 
 void MainWindow::stopFeed() {

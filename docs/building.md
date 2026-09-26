@@ -120,7 +120,9 @@ and run the app from the build folder.
 - `dji-vcam --stream URL` plays a network stream the way the RTMP feed does. To test the whole RTMP
   path, run go2rtc with a local configuration, push a test pattern into it and play its RTSP
   output: `ffmpeg -re -f lavfi -i testsrc2=size=1280x720:rate=30 -c:v libopenh264 -f flv
-  rtmp://127.0.0.1:1935/dji-vcam`, then `dji-vcam --stream rtsp://127.0.0.1:8554/dji-vcam`.
+  rtmp://127.0.0.1:1935/live/vcam`, then `dji-vcam --stream rtsp://127.0.0.1:8554/live`.
+- `DJIVCAM_BLE_TRACE=1` (environment) logs every frame the camera sends over Bluetooth, Wi-Fi
+  payloads masked, e.g. the livestream state pushes `ee/03` (protocol-notes.md 3.13).
 - `dji-vcam-cli --ble-scan 10` lists the Bluetooth LE devices advertising nearby and marks DJI
   cameras (with their model byte).
 - `dji-vcam-cli --list-cameras` lists the cameras apps can see (Media Foundation);

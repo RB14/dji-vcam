@@ -655,10 +655,17 @@ the settings mean:
 | Record, photo, codec | Hidden: unverified |
 | FOV, exposure, white balance, colour | Shown; to check in the test session (docs/tasks.md) |
 
-On the RTMP feed there is no live view session, so the app sends the same commands over the
-Bluetooth link it holds to keep the camera on the network, as DJI Mimo does during its livestream
-(stabilization, `02/8E` pid `0x0008` to `0x01`, was answered over Bluetooth). Whether the camera
-also pushes its status topics over Bluetooth (exposure, white balance, battery) is to be verified.
+On the RTMP feed there is no live view session, so the app sends its requests over the Bluetooth
+link it holds to keep the camera on the network [VERIFIED 2026-09-26]:
+
+- **The parameter command `02/8E` works** (to `0x01`): stabilization (`0x0008`), Daily/Sport
+  (`0x0030`), FOV (`0x0009`), auto ISO limit (`0x000F`), GET and SET. DJI Mimo sends only these
+  there.
+- **The dedicated commands get no answer**: exposure mode `02/1E`, EV `02/2E` (tested), and by the
+  same token ISO, shutter, anti-flicker, white balance, colour, texture and noise reduction. The
+  app shows them (from the status topics) but disables them on that feed.
+- **The status topics are pushed over Bluetooth** (`00/99`, dozens a second with the app's
+  subscriptions); the subscriptions stay across Bluetooth connections until the camera restarts.
 
 ---
 

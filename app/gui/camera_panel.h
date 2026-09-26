@@ -34,8 +34,12 @@ public:
     // are not the camera's usual ones (a change of mode would end the session, format changes snap
     // back) and recording is unverified: those controls are hidden.
     void setLiveStreaming(bool on);
-    // Why there is no camera to control (e.g. on the RTMP feed); empty for the default text.
+    // Why there is no camera to control; empty for the default text.
     void setUnavailable(const QString& reason);
+    // Over the Bluetooth link (the RTMP feed) the camera takes only its parameter settings
+    // (stabilization, scene, FOV, auto ISO limit) and ignores the others' commands: those are
+    // shown but disabled.
+    void setParametersOnly(bool on);
     void showState(const djivcam::camera::CameraState& state);
 
 private:
@@ -60,6 +64,7 @@ private:
     bool have_state_ = false;
 
     QString unavailable_;
+    bool parameters_only_ = false;
     QWidget* shooting_ = nullptr;  // mode, format and codec
     QWidget* actions_ = nullptr;   // record and photo
     QLabel* hint_;

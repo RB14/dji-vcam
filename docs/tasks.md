@@ -40,23 +40,50 @@ Phases:
 - [x] Camera settings on the RTMP feed, over the Bluetooth link the app holds anyway
       (CameraConnector carries the settings panel's requests and the camera's pushes)
 
-Test session with the camera (after phase 5):
-- [ ] The whole app flow on the camera: network dialog, join, the camera found by its MAC, both
-      feeds, switching between them, Disconnect back to Video mode
-- [ ] go2rtc with DJI's RTMP client (else MediaMTX); delay and accuracy of the RTMP feed
-- [ ] Screens time out with our RTMP; both feeds at once: delay, heat (the camera's temperature
-      level in the 0x1D/0x02 status push), battery over 30 min vs the access-point mode
-- [ ] Which camera settings work in Live Streaming mode; can it record meanwhile
-- [ ] Settings on the RTMP feed over Bluetooth: do changes apply, does the panel get the camera's
-      status (exposure, white balance, battery: are the status topics pushed over Bluetooth)
+Test session with the camera (2026-09-26):
+- [x] The whole app flow on the camera: network dialog, join, the camera found by its MAC, both
+      feeds, switching between them (RTMP back to low latency rejoins, ~20 s), Disconnect back to
+      Video mode. Connect to video: ~26 s, of which the join ~11 s
+- [x] go2rtc with DJI's RTMP client: works, ~0.4 s behind, once the start follows Mimo
+      (settings, then the start; an address with an app and a key; at most 127 bytes of JSON)
+- [x] The camera's screens time out while it streams RTMP
+- [ ] Both feeds at once: delay, heat (the camera's temperature level in the 0x1D/0x02 status
+      push), battery over 30 min vs the access-point mode
+- [x] Camera settings in Live Streaming mode on the low-latency feed: all of them work; the
+      shutter cannot be slower than a frame (1/24 turns into 1/30 at 30 fps)
+- [ ] Can the camera record in Live Streaming mode
+- [x] Settings on the RTMP feed over Bluetooth: only the 02/8E parameters (stabilization, scene,
+      FOV, auto ISO limit); the status topics are pushed over Bluetooth
 - [ ] Stop only the RTMP push and stay on the network, so switching back to low latency needs no
       rejoin. `dji-vcam-cli --ble --join-network FILE --live-mode --live-start 1080 URL --hold 90`
       with: `--support-stop-live` and the stop `--ble-send 08,02,8e,01011a000102`; other pid
-      `0x001A` values; stopping go2rtc during the push. Then check the live view still plays
+      `0x001A` values; stopping go2rtc during the push (that makes the camera retry by itself).
+      Then check the live view still plays
 - [ ] 5 GHz networks; the network list's flag byte
-- [ ] Power-off, sleep and Bluetooth loss: the session rebuilds itself
+- [ ] Camera restart while connected, on each feed (as test 7 below did for 0.1.0): the app finds
+      the camera, puts it back on the network and the video returns by itself; time it (0.1.0:
+      ~15 s after the camera is on)
+- [ ] Sleep and Bluetooth loss (out of range, Bluetooth off): the session rebuilds itself
 - [ ] The 1080p webcam (new media source: install), in Windows Camera, Chrome and OBS
 - [ ] Full install on a clean profile
+
+Found in the test session (2026-09-26), to do:
+- [ ] Join: resend it when the camera does not answer (the first join right after a scan got no
+      answer; Mimo sends it twice) instead of failing after 30 s; say "no answer yet: check the
+      password" while waiting; scan first to join faster (~1 s after a scan, ~11 s without)
+- [ ] Network dialog: "From Windows" fills in the password Windows keeps for this computer's
+      network (one administrator prompt); say that an empty password means an open network
+- [ ] RTMP start: retry a start without answer; keep its error visible (the "waiting for the RTMP
+      stream" status covers it); follow the camera's livestream state (`ee/03`) to say when it
+      failed; a hint about the firewall when the camera never connects
+- [ ] Status subscriptions over Bluetooth: the camera keeps them across connections until it
+      restarts, so every RTMP session adds a set (~55 pushes/s after a few): reuse the ids, or
+      read the settings instead
+- [ ] Full settings on the RTMP feed: try the live view's connection for commands only while the
+      camera pushes
+- [ ] RTMP address without the port (for long IP addresses): untested with the camera
+- [ ] Answer or ignore the camera's own Bluetooth requests `00/81` and `00/74` (Mimo does not
+      seem to answer them either)
 
 ## Test plan with the camera (started 2026-09-25)
 

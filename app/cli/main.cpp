@@ -628,11 +628,11 @@ int main(int argc, char* argv[]) {
                 say("--join-network: expected a network name (up to 32 bytes) and a password (up to 63)");
                 return 1;
             }
-            camera->set_log_camera_requests(true);  // what the camera says while it joins
-            // DJI Mimo's livestream start (0x08/0x78), with its quality for the resolution.
+            camera->set_log_camera_requests(true, true);  // what the camera says while it joins
+            // DJI Mimo's livestream settings (0x08/0x78), with its quality for the resolution.
             const auto live_settings = [&](int resolution, const std::string& url) {
                 const bool full_hd = resolution == 1080;
-                return djivcam::live::start_stream({full_hd ? djivcam::live::Resolution::P1080 : djivcam::live::Resolution::P720,
+                return djivcam::live::stream_settings({full_hd ? djivcam::live::Resolution::P1080 : djivcam::live::Resolution::P720,
                                                     static_cast<std::uint16_t>(full_hd ? 6000 : 4000), url, support_stop_live});
             };
             const auto mac = camera->request(djivcam::duml::kAddrWifi, 0x07, 0x0C, {}, 2s);
@@ -694,10 +694,13 @@ int main(int argc, char* argv[]) {
                     say("Video mode (to 08): " + (mode ? mode->describe() : std::string("no reply")));
                 }
             }
-            if (live_start && reply) {  // the push, kept during --hold
-                const auto started = camera->request(live_settings(live_start, live_start_url), 10s);
-                say("livestream start (" + std::to_string(live_start) + "p, " + live_start_url + "): " +
-                    (started ? started->describe() : std::string("no reply")));
+            if (live_start && reply) {  // the push, kept during --hold: the settings, then the start
+                const auto stored = camera->request(live_settings(live_start, live_start_url), 10s);
+                say("livestream settings (" + std::to_string(live_start) + "p, " + live_start_url + "): " +
+                    (stored ? stored->describe() : std::string("no reply")));
+                std::this_thread::sleep_for(1s);  // as DJI Mimo
+                const auto started = camera->request(djivcam::live::start_stream(), 10s);
+                say("livestream start: " + (started ? started->describe() : std::string("no reply")));
             }
             // DJI Mimo keeps the Bluetooth link during its livestream: 0x00/0x2B 04 00 every 2.5 s.
             // The --ble-send requests go out in between (e.g. a stop of only the push).

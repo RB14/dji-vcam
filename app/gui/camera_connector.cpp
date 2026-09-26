@@ -172,6 +172,9 @@ void CameraConnector::run(std::stop_token stop, QString identifier, QString toke
     while (!stop.stop_requested()) {
         djivcam::ble::CameraBle camera(log);
         djivcam::live::Session session(camera, log);
+        if (qEnvironmentVariableIsSet("DJIVCAM_BLE_TRACE")) {
+            camera.set_log_camera_requests(true, true);  // every frame the camera sends, in the log
+        }
         camera.set_message_callback([this](const djivcam::duml::Frame& frame) {
             if (joined_ && camera_control_) {
                 camera_->on_message(frame);  // the camera's status topics

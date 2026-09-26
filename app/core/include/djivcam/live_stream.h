@@ -60,10 +60,18 @@ Command scan_networks();
 // 07/47: joins the network; answered 00 00 once joined. Throws std::invalid_argument for a name
 // that is empty or longer than 32 bytes, or a password longer than 63.
 Command join_network(std::string_view ssid, std::string_view password);
-// 08/78: starts pushing RTMP to settings.url and stores the settings. Throws std::invalid_argument
-// if the URL does not fit in one Bluetooth frame.
-Command start_stream(const StreamSettings& settings);
-// 02/8E: stops the livestream; this also ends the join and Live Streaming mode.
+// Whether the camera takes these settings: an address whose JSON (below) is at most 127 bytes; it
+// refuses longer ones (busy, d6). About 35 characters for rtmp://host:port/app/key.
+bool fits(const StreamSettings& settings);
+// 08/78: the livestream settings (resolution, bitrate, RTMP address), which the camera stores;
+// start_stream() then starts the push. The address needs an application and a stream key
+// (/live/osmo): without a key the camera fails to connect. Throws std::invalid_argument if the
+// settings do not fit().
+Command stream_settings(const StreamSettings& settings);
+// 02/8E, livestream state (pid 0x001A) 1: starts pushing RTMP with the stored settings, as DJI Mimo
+// does about a second after stream_settings().
+Command start_stream();
+// 02/8E, livestream state 2: stops the livestream; this also ends the join and Live Streaming mode.
 Command stop_stream();
 // 08/79: reads the stored livestream settings (parse_stream_settings()).
 Command read_stream_settings();

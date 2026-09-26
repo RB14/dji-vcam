@@ -24,8 +24,9 @@ class RtmpServer : public QObject {
 public:
     static constexpr quint16 kRtmpPort = 1935;
     static constexpr quint16 kRtspPort = 8554;  // on this computer only
-    // The stream's name in every URL.
-    static QString streamName() { return QStringLiteral("dji-vcam"); }
+    // The stream's name in every URL: the camera publishes to /live/<key> as DJI Mimo has it do (a
+    // short address: the camera takes about 35 characters, live::fits()).
+    static QString streamName() { return QStringLiteral("live"); }
 
     // The server bundled with the app; nullptr if its program is missing.
     static RtmpServer* create(QObject* parent);
@@ -38,8 +39,9 @@ public:
     void stop();
     bool running() const;
 
-    // Where the camera publishes: `host` is this computer's address on the camera's network.
-    virtual QString ingestUrl(const QString& host) const = 0;
+    // Where the camera publishes: `host` is this computer's address on the camera's network. Without
+    // the port, the RTMP default, when the address would be too long for the camera.
+    virtual QString ingestUrl(const QString& host, bool with_port = true) const = 0;
     // Where our player reads the stream, on this computer.
     virtual QString playbackUrl() const = 0;
     // Addresses other apps on this computer can open.

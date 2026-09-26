@@ -29,7 +29,20 @@ constexpr std::uint16_t kPairingSeq = 0x8092;
 // Frames kept for request() and wait_for_camera_request(): the link lives for hours, the camera
 // pushes its status topics every few seconds.
 constexpr std::size_t kKeptFrames = 64;
-constexpr auto kWriteSpacing = 20ms;  // back-to-back write-without-response frames get dropped
+constexpr auto kWriteSpacing = 20ms;
+
+// The status topic pushes (0x00/0x99), dozens a second while subscribed.
+bool status_topic(const duml::Frame& frame) { return frame.cmd_set == 0x00 && frame.cmd_id == 0x99; }
+
+// A frame for the log, without Wi-Fi payloads (0x07: the password, the networks the camera hears).
+std::string safe_describe(const duml::Frame& frame) {
+    if (frame.cmd_set != 0x07 || frame.payload.empty()) {
+        return frame.describe();
+    }
+    duml::Frame masked = frame;
+    masked.payload.clear();
+    return masked.describe() + " (" + std::to_string(frame.payload.size()) + " bytes not shown)";
+}  // back-to-back write-without-response frames get dropped
 constexpr auto kNameWait = 1500ms;     // how long a found camera may still send its name
 
 // 62-byte "APP" device-info blob the camera expects in reply to its 0x00/0x81 request.
@@ -64,6 +77,7 @@ struct CameraBle::Impl {
     std::mutex mutex;
     std::atomic<bool> answer_requests{false};  // as DJI Mimo
     std::atomic<bool> log_camera_requests{false};
+    std::atomic<bool> log_replies{false};
     std::condition_variable_any changed;
     duml::StreamParser parser;
     std::vector<duml::Frame> responses;  // unclaimed responses from the camera
@@ -120,8 +134,8 @@ struct CameraBle::Impl {
         }
         for (duml::Frame& frame : frames) {
             if ((frame.flags & 0x80) == 0) {  // the camera's own request or push, not a reply
-                if (log_camera_requests) {
-                    say("camera -> " + frame.describe());
+                if (log_camera_requests && !status_topic(frame)) {
+                    say("camera -> " + safe_describe(frame));
                 }
                 {
                     std::lock_guard lock(mutex);
@@ -146,6 +160,9 @@ struct CameraBle::Impl {
                     send(frame.reply(device_info ? app_device_info() : frame.payload));
                 }
             } else {
+                if (log_replies) {
+                    say("camera reply -> " + safe_describe(frame));
+                }
                 std::lock_guard lock(mutex);
                 responses.push_back(std::move(frame));
                 if (responses.size() > kKeptFrames) {  // replies nobody waited for (timed out)
@@ -322,7 +339,10 @@ std::optional<WifiCredentials> CameraBle::wake_wifi() {
 
 void CameraBle::set_answer_requests(bool answer) { impl_->answer_requests = answer; }
 
-void CameraBle::set_log_camera_requests(bool log) { impl_->log_camera_requests = log; }
+void CameraBle::set_log_camera_requests(bool log, bool replies) {
+    impl_->log_camera_requests = log;
+    impl_->log_replies = replies;
+}
 
 void CameraBle::set_message_callback(std::function<void(const duml::Frame&)> on_message) {
     impl_->on_message = std::move(on_message);

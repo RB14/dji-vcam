@@ -72,17 +72,20 @@ const live::StreamSettings kStream{live::Resolution::P1080, 6000, "rtmp://192.16
 TEST(LiveSession, JoinsInLiveStreamingMode) {
     auto link = willing_camera();
     Session session(link);
+    session.set_start_pause(std::chrono::milliseconds(0));
     ASSERT_TRUE(session.enter_live_mode());
     EXPECT_EQ(session.state(), State::LiveMode);
     ASSERT_TRUE(session.join("HomeWiFi", "secret123"));
     EXPECT_EQ(session.state(), State::Joined);
     EXPECT_EQ(session.wifi_mac(), "58:b8:58:00:00:01");
-    EXPECT_EQ(link.sequence(), (std::vector<std::pair<int, int>>{{0x02, 0xE1}, {0x07, 0x47}, {0x07, 0x0C}}));
+    EXPECT_EQ(link.sequence(), (std::vector<std::pair<int, int>>{{0x02, 0x8E}, {0x02, 0xE1}, {0x07, 0x47}, {0x07, 0x0C}}));
+    EXPECT_EQ(link.sent[0].payload, live::stop_stream().payload);  // a livestream left from before
 }
 
 TEST(LiveSession, JoinNeedsLiveStreamingMode) {
     auto link = willing_camera();
     Session session(link);
+    session.set_start_pause(std::chrono::milliseconds(0));
     EXPECT_FALSE(session.join("HomeWiFi", "secret123"));  // outside it the camera fails (answer 01 ff)
     EXPECT_TRUE(link.sent.empty());
     EXPECT_EQ(session.state(), State::Idle);
@@ -92,6 +95,7 @@ TEST(LiveSession, RefusedOrSilentJoinKeepsLiveStreamingMode) {
     auto link = willing_camera();
     link.answers[{0x07, 0x47}] = {0x01, 0xFF};
     Session session(link);
+    session.set_start_pause(std::chrono::milliseconds(0));
     ASSERT_TRUE(session.enter_live_mode());
     EXPECT_FALSE(session.join("HomeWiFi", "wrong"));
     EXPECT_EQ(session.state(), State::LiveMode);
@@ -103,18 +107,34 @@ TEST(LiveSession, RefusedOrSilentJoinKeepsLiveStreamingMode) {
 TEST(LiveSession, StreamsOnlyOnceJoined) {
     auto link = willing_camera();
     Session session(link);
+    session.set_start_pause(std::chrono::milliseconds(0));
     EXPECT_FALSE(session.start_stream(kStream));
     ASSERT_TRUE(session.enter_live_mode());
     EXPECT_FALSE(session.start_stream(kStream));
     ASSERT_TRUE(session.join("HomeWiFi", "secret123"));
+    link.sent.clear();
     ASSERT_TRUE(session.start_stream(kStream));
     EXPECT_EQ(session.state(), State::Streaming);
-    EXPECT_EQ(link.sent.back().payload, live::start_stream(kStream).payload);
+    ASSERT_EQ(link.sent.size(), 2u);  // the settings, then the start
+    EXPECT_EQ(link.sent[0].payload, live::stream_settings(kStream).payload);
+    EXPECT_EQ(link.sent[1].payload, live::start_stream().payload);
+}
+
+TEST(LiveSession, AStartWithoutAnswerLeavesItJoined) {
+    auto link = willing_camera();
+    Session session(link);
+    session.set_start_pause(std::chrono::milliseconds(0));
+    ASSERT_TRUE(session.enter_live_mode());
+    ASSERT_TRUE(session.join("HomeWiFi", "secret123"));
+    link.answers.erase({0x02, 0x8E});
+    EXPECT_FALSE(session.start_stream(kStream));
+    EXPECT_EQ(session.state(), State::Joined);
 }
 
 TEST(LiveSession, LeavingAStreamStopsItThenReturnsToVideoMode) {
     auto link = willing_camera();
     Session session(link);
+    session.set_start_pause(std::chrono::milliseconds(0));
     session.enter_live_mode();
     session.join("HomeWiFi", "secret123");
     session.start_stream(kStream);
@@ -129,6 +149,7 @@ TEST(LiveSession, LeavingAStreamStopsItThenReturnsToVideoMode) {
 TEST(LiveSession, LeavingWithoutAStreamOnlyReturnsToVideoMode) {
     auto link = willing_camera();
     Session session(link);
+    session.set_start_pause(std::chrono::milliseconds(0));
     session.leave();  // idle: nothing to do
     EXPECT_TRUE(link.sent.empty());
     session.enter_live_mode();
@@ -142,6 +163,7 @@ TEST(LiveSession, LeavingWithoutAStreamOnlyReturnsToVideoMode) {
 TEST(LiveSession, KeepAliveEveryIntervalFromLiveStreamingModeOn) {
     auto link = willing_camera();
     Session session(link);
+    session.set_start_pause(std::chrono::milliseconds(0));
     const auto start = Session::Clock::now();
     session.keep_alive(start + std::chrono::seconds(10));  // idle: nothing
     EXPECT_TRUE(link.sent.empty());
@@ -164,6 +186,7 @@ TEST(LiveSession, ScanReturnsTheCamerasList) {
     list.payload = {0x01, 0x11, 0x00, 0x00, 0x0A, 0x01, 0x01, 0x01, 0x00, 0x00, 'H', 'o', 'm', 'e'};
     link.pushes.push_back(list);
     Session session(link);
+    session.set_start_pause(std::chrono::milliseconds(0));
     EXPECT_TRUE(session.scan(std::chrono::seconds(1)).empty());  // needs Live Streaming mode
     session.enter_live_mode();
     const auto networks = session.scan(std::chrono::seconds(1));
@@ -175,6 +198,7 @@ TEST(LiveSession, RefusedLiveModeStaysIdle) {
     auto link = willing_camera();
     link.answers[{0x02, 0xE1}] = {0x01};
     Session session(link);
+    session.set_start_pause(std::chrono::milliseconds(0));
     EXPECT_FALSE(session.enter_live_mode());
     EXPECT_EQ(session.state(), State::Idle);
 }

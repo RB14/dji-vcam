@@ -58,6 +58,8 @@ private:
     void startFeed();
     void startLowLatency();
     void startRtmp();
+    // The camera settings panel over the Bluetooth link (the RTMP feed).
+    void enableBluetoothSettings();
     void stopFeed();
     void onFeedChosen();
     void onSessionState(const QString& state, const QString& detail);

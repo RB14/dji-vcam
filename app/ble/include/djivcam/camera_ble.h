@@ -67,9 +67,10 @@ public:
     // DJI Mimo answers none of them over Bluetooth and the camera keeps the link: off by default.
     // The pairing approval (0x07/0x46) is always processed and answered.
     void set_answer_requests(bool answer);
-    // Logs the requests and pushes the camera sends on its own (never the replies to ours, which
-    // can carry the camera's Wi-Fi password). For experiments.
-    void set_log_camera_requests(bool log);
+    // Logs the requests and pushes the camera sends on its own and, with `replies`, the replies to
+    // ours: for experiments and DJIVCAM_BLE_TRACE. Wi-Fi payloads (0x07: the camera's password, the
+    // networks it hears) are never shown, nor the status topic pushes (0x00/0x99, dozens a second).
+    void set_log_camera_requests(bool log, bool replies = false);
     // Called with every request and push the camera sends on its own (e.g. its status topics), on
     // the Bluetooth stack's thread. Set before connect().
     void set_message_callback(std::function<void(const duml::Frame&)> on_message);

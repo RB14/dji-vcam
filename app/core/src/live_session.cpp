@@ -1,6 +1,7 @@
 #include "djivcam/live_session.h"
 
 #include <algorithm>
+#include <thread>
 
 namespace djivcam::live {
 namespace {
@@ -34,6 +35,9 @@ void Session::say(const std::string& message) const {
 }
 
 bool Session::enter_live_mode() {
+    // A livestream from before (another session, a push that failed and retries) keeps the camera
+    // busy: it refuses new settings (d6). DJI Mimo and Moblin stop it first too; no answer is fine.
+    link_.request(stop_stream(), kShortTimeout);
     const auto reply = link_.request(live_mode(), kModeTimeout);
     if (!reply || !accepted(*reply)) {
         say(reply ? "the camera refused Live Streaming mode" : "no answer to Live Streaming mode");
@@ -85,9 +89,16 @@ bool Session::start_stream(const StreamSettings& settings) {
         say(std::string("the RTMP push needs the join, not ") + describe(state_));
         return false;
     }
-    const auto reply = link_.request(live::start_stream(settings), kStartTimeout);
-    if (!reply || !accepted(*reply)) {
-        say(reply ? "the camera refused the RTMP push" : "no answer to the RTMP push");
+    // The settings first (stored by the camera), then the start itself, as DJI Mimo does.
+    const auto stored = link_.request(live::stream_settings(settings), kStartTimeout);
+    if (!stored || !accepted(*stored)) {
+        say(stored ? "the camera refused the RTMP settings" : "no answer to the RTMP settings");
+        return false;
+    }
+    std::this_thread::sleep_for(start_pause_);  // the camera missed a start sent at once, or 13 s late
+    const auto started = link_.request(live::start_stream(), kStartTimeout);
+    if (!started || !accepted(*started)) {
+        say(started ? "the camera refused to start the RTMP push" : "no answer to the RTMP start");
         return false;
     }
     state_ = State::Streaming;

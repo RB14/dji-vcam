@@ -346,6 +346,9 @@ void CameraPanel::updateStatus() {
         hint_->setText(unavailable_.isEmpty() ? tr("Connect to the camera to change its settings.") : unavailable_);
     } else if (!have_state_) {
         hint_->setText(tr("Waiting for the camera's settings..."));
+    } else if (parameters_only_) {
+        hint_->setText(tr("On the RTMP feed only stabilization, scene, FOV and the auto ISO limit can be changed; "
+                          "exposure and color are changed on the low-latency feed (the camera keeps them)."));
     } else {
         hint_->setText(tr("Changes are made on the camera; a value it does not accept in the current mode snaps back."));
     }
@@ -358,6 +361,12 @@ void CameraPanel::setLiveStreaming(bool on) {
 
 void CameraPanel::setUnavailable(const QString& reason) {
     unavailable_ = reason;
+    updateStatus();
+}
+
+void CameraPanel::setParametersOnly(bool on) {
+    parameters_only_ = on;
+    updateEnabled();
     updateStatus();
 }
 
@@ -383,12 +392,15 @@ void CameraPanel::updateEnabled() {
         case Setting::AntiFlicker: enabled = enabled && automatic; break;
         default: break;
         }
+        if (parameters_only_ && !djivcam::camera::parameter_of(row.setting)) {
+            enabled = false;  // its command is ignored over Bluetooth
+        }
         row.box->setEnabled(enabled);
     }
     resolution_->setEnabled(live && !state_.recording);
     frame_rate_->setEnabled(live && !state_.recording && state_.resolution.has_value());
-    shutter_->setEnabled(live && manual);
-    white_balance_->setEnabled(live);
+    shutter_->setEnabled(live && manual && !parameters_only_);
+    white_balance_->setEnabled(live && !parameters_only_);
     record_->setEnabled(live);
     photo_->setEnabled(live && value(Setting::Mode) == kModePhoto && !state_.recording);
 }

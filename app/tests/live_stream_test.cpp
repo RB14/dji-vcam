@@ -39,7 +39,7 @@ TEST(LiveStream, JoinRejectsBadLengths) {
 }
 
 TEST(LiveStream, StartFollowsMimosLayout) {
-    const auto command = live::start_stream({Resolution::P1080, 6000, "rtmp://192.168.1.20:1935/live/cam"});
+    const auto command = live::stream_settings({Resolution::P1080, 6000, "rtmp://192.168.1.20:1935/live/cam"});
     EXPECT_EQ(command.receiver, live::kAddrLive);
     EXPECT_EQ(command.cmd_set, 0x08);
     EXPECT_EQ(command.cmd_id, 0x78);
@@ -47,19 +47,30 @@ TEST(LiveStream, StartFollowsMimosLayout) {
     const std::string json = R"({"rtmpAddress":"rtmp:\/\/192.168.1.20:1935\/live\/cam","watermark":0,"codec":"",)"
                              R"("EnhancedRTMP":false,"supportStopLive":false})";
     EXPECT_EQ(command.payload, concat({head, bytes(json)}));
-    EXPECT_EQ(live::start_stream({Resolution::P720, 4000, "rtmp://h/x"}).payload[3], 0x04);
-    EXPECT_EQ(live::start_stream({Resolution::P720, 4000, "rtmp://h/x"}).payload[4], 0xA0);  // 4000 = 0x0FA0
+    EXPECT_EQ(live::stream_settings({Resolution::P720, 4000, "rtmp://h/x"}).payload[3], 0x04);
+    EXPECT_EQ(live::stream_settings({Resolution::P720, 4000, "rtmp://h/x"}).payload[4], 0xA0);  // 4000 = 0x0FA0
 }
 
 TEST(LiveStream, StartCanAnnounceStopSupport) {
-    const auto payload = live::start_stream({Resolution::P1080, 6000, "rtmp://h/x", true}).payload;
+    const auto payload = live::stream_settings({Resolution::P1080, 6000, "rtmp://h/x", true}).payload;
     const std::string text(payload.begin(), payload.end());
     EXPECT_TRUE(text.ends_with(R"("supportStopLive":true})"));
 }
 
+TEST(LiveStream, TheSettingsJsonFitsTheCamerasBuffer) {
+    // 35 characters with 4 slashes: 127 bytes of JSON, the most the camera takes (DJI Mimo's size).
+    EXPECT_TRUE(live::fits({Resolution::P1080, 6000, "rtmp://172.16.100.20:1935/live/vcam"}));
+    EXPECT_FALSE(live::fits({Resolution::P1080, 6000, "rtmp://172.16.100.20:1935/live/vcam1"}));
+    EXPECT_FALSE(live::fits({Resolution::P1080, 6000, "rtmp://172.16.100.20:1935/live/djivcam"}));  // refused: d6
+    EXPECT_TRUE(live::fits({Resolution::P1080, 6000, "rtmp://172.16.100.20/live/vcam"}));
+    EXPECT_FALSE(live::fits({Resolution::P1080, 6000, ""}));
+    EXPECT_THROW(live::stream_settings({Resolution::P1080, 6000, "rtmp://172.16.100.20:1935/live/vcam1"}),
+                 std::invalid_argument);
+}
+
 TEST(LiveStream, StartRejectsMissingOrHugeAddresses) {
-    EXPECT_THROW(live::start_stream({Resolution::P1080, 6000, ""}), std::invalid_argument);
-    EXPECT_THROW(live::start_stream({Resolution::P1080, 6000, "rtmp://h/" + std::string(300, 'x')}), std::invalid_argument);
+    EXPECT_THROW(live::stream_settings({Resolution::P1080, 6000, ""}), std::invalid_argument);
+    EXPECT_THROW(live::stream_settings({Resolution::P1080, 6000, "rtmp://h/" + std::string(300, 'x')}), std::invalid_argument);
 }
 
 TEST(LiveStream, ControlCommandsGoWhereMimoSendsThem) {
@@ -67,6 +78,8 @@ TEST(LiveStream, ControlCommandsGoWhereMimoSendsThem) {
     EXPECT_EQ(live::live_mode().payload, duml::Bytes{0x1A});
     EXPECT_EQ(live::video_mode().payload, duml::Bytes{0x01});
     EXPECT_EQ(live::stop_stream().payload, (duml::Bytes{0x01, 0x01, 0x1A, 0x00, 0x01, 0x02}));
+    EXPECT_EQ(live::start_stream().payload, (duml::Bytes{0x01, 0x01, 0x1A, 0x00, 0x01, 0x01}));
+    EXPECT_EQ(live::start_stream().receiver, live::kAddrLive);
     EXPECT_EQ(live::scan_networks().receiver, live::kAddrWifiScan);
     EXPECT_EQ(live::keep_alive().receiver, duml::kAddrSession);
     EXPECT_EQ(live::keep_alive().payload, (duml::Bytes{0x04, 0x00}));

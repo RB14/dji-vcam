@@ -88,7 +88,7 @@ The toolbar's **Feed** choice selects what the app plays:
   (go2rtc), and the app plays it, about 0.4 s behind (the camera buffers its livestream). *Options →
   RTMP quality* chooses 1080p at 6 Mbit/s or 720p at 4 Mbit/s. Other apps can open the same stream:
   *Options → Stream addresses* shows its addresses, e.g. for an OBS *Media Source*
-  (`rtsp://127.0.0.1:8554/dji-vcam`).
+  (`rtsp://127.0.0.1:8554/live`).
 
 The camera settings panel works with both.
 
@@ -122,8 +122,7 @@ and delete that folder. (The installer's uninstaller does all of it by itself.)
 ## Camera settings
 
 The **Camera settings** panel on the right (toolbar: *Camera settings* shows or hides it) works
-like the DJI Mimo app, on either feed (on the RTMP feed the settings go over Bluetooth, as in DJI
-Mimo during a livestream):
+like the DJI Mimo app:
 
 - **Image**: stabilization (RockSteady, RockSteady+, HorizonSteady, HorizonBalancing), Daily/Sport,
   FOV.
@@ -137,6 +136,10 @@ While connected, the camera is in its **Live Streaming mode**: its shooting mode
 and codec do not apply (a change of mode would disconnect it), and recording in this mode is not
 supported yet, so those controls are hidden. The lists only offer what the camera accepts; if it
 refuses a change, the control snaps back and the status bar says why.
+
+On the **RTMP feed** the settings go over Bluetooth, and there the camera only takes stabilization,
+Daily/Sport, FOV and the auto ISO limit: exposure and color are shown but greyed out. Change them
+on the low-latency feed; the camera keeps them.
 
 ## Lost video
 

@@ -5,7 +5,7 @@
 #include <QJsonObject>
 
 QString Go2RtcServer::parsePublisher(const QByteArray& reply) const {
-    // {"dji-vcam":{"producers":[{"format_name":"rtmp","remote_addr":"192.168.1.5:54321",...}],...}}
+    // {"live":{"producers":[{"format_name":"rtmp","remote_addr":"192.168.1.5:54321",...}],...}}
     const QJsonArray producers =
         QJsonDocument::fromJson(reply).object().value(streamName()).toObject().value(QStringLiteral("producers")).toArray();
     for (const QJsonValue& producer : producers) {

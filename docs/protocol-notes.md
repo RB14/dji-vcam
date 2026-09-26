@@ -467,14 +467,17 @@ all over Bluetooth, the network password and pairing identifier not reproduced h
 - **The scan is optional.** In Live Streaming mode the join answers `00 00` after ~10 s without it,
   ~1 s after a scan. Hidden networks join by name (and appear in the list once known).
 - **The Bluetooth link must stay up**, with Mimo's keep-alive: hanging up sends the camera back to
-  its access point within seconds. (The opposite of 3.11, which is about the access point.)
+  its access point within seconds. (The opposite of 3.11, which is about the access point.) A
+  *running* RTMP push is the exception: it outlived a hang-up by a minute, until its server went
+  away (2026-09-26).
 - **Stop** (`02/8E 01 01 1a 00 01 02`) ends the livestream, the join *and* Live Streaming mode.
   Switching to Video mode (`02/E1 01` to `0x08`; sent to `0x01` it gets no answer in this mode)
   also ends the join.
-- **Settings over Bluetooth.** During its livestream Mimo read and set stabilization (`02/8E` pid
-  `0x0008` to `0x01`) over the link, answered `00`: the app's RTMP feed, which has no live view
-  session, changes the camera's settings this way. Whether the camera pushes its status topics
-  over Bluetooth too is to be verified.
+- **Settings over Bluetooth.** The camera answers only the parameter command `02/8E` over the link
+  (stabilization, scene, FOV, auto ISO limit: camera-controls.md 3.13); the dedicated commands
+  (exposure `02/1E`, EV `02/2E`, white balance, colour...) get no answer. Its status topics are
+  pushed over Bluetooth too (DDS `00/99`, and they stay subscribed across connections until the
+  camera restarts). Mimo, too, only sends `02/8E` there.
 - **Stopping only the push** is unknown so far: the stop above also ends the join, so the app
   rejoins to go back to the live view alone (15-20 s). To try: the start's `"supportStopLive":true`,
   other values of pid `0x001A` at `0x08`, the RTMP server closing the connection
@@ -485,14 +488,31 @@ all over Bluetooth, the network password and pairing identifier not reproduced h
 - The camera answers `07/0C` with its Wi-Fi MAC, the same on its access point and as a client:
   the app can find its address by MAC, or from its RTMP connection.
 
-**Livestream start `08/78`** (Mimo, for the Action 5 Pro; Moblin's older layout is in section 4):
-`01 8a 00 <resolution> <kbit/s: u16 LE> fe 01 00 00 00 00 7f 00` then JSON
-`{"rtmpAddress":"rtmp:\/\/<host>:<port>\/<path>","watermark":0,"codec":"","EnhancedRTMP":false,"supportStopLive":false}`
-(slashes escaped). Resolution `04` = 720p, `0a` = 1080p (as Moblin); Mimo offered 4000 and
-6000 kbit/s. The camera **stores** these settings; `08/79 01` reads them back:
-`00 01 8a 00 <resolution> <kbit/s> 00 01 00 00 00 00 7f 00 <address, NUL-padded>`. A start to a
-closed port is accepted (`00`) and stores them too. **The preview stays 1080p** whatever is stored.
-Unknown: `fe 01` (stored as `00 01`), the frame rate field.
+**Starting the RTMP push** [VERIFIED 2026-09-26, the app and `dji-vcam-cli --live-start`]:
+
+1. `02/8E 01 01 1a 00 01 02` (stop) to `0x08` first, as Mimo and Moblin do: clears a livestream
+   left from before.
+2. **Settings `08/78`** to `0x08` (Mimo, for the Action 5 Pro; Moblin's older layout is in section
+   4): `01 8a 00 <resolution> <kbit/s: u16 LE> fe 01 00 00 00 00 7f 00` then JSON
+   `{"rtmpAddress":"rtmp:\/\/<host>:<port>\/<app>\/<key>","watermark":0,"codec":"","EnhancedRTMP":false,"supportStopLive":false}`
+   (slashes escaped). They only **store** the settings (answered `00` even for a closed port).
+3. About a second later, **start** `02/8E 01 01 1a 00 01 01` (livestream state 1) to `0x08`: the
+   camera connects, and answers `00` once it has (~2 s).
+4. `ee/03` pushes from `0x08` (flags `0x80`, about 1 Hz) report the livestream: `03 09` ready,
+   `02 09` joined with settings, `02 08 <n> … 70 17` streaming (`n` counts up, `0x1770` = 6000
+   kbit/s), `02 79` failed (the camera then shows "live stream failed" and retries by itself).
+
+Two limits the camera does not explain (it answers `d6`, "busy", or fails later):
+- **The JSON must be at most 127 bytes** (a 128-byte buffer, it seems): 125 and 127 were accepted,
+  130 and 133 refused with `d6`. Mimo's is 127. About 35 characters of address, so
+  `rtmp://<ip>:1935/live/vcam`.
+- **The address needs an application and a stream key** (`/live/osmo`): with `/dji-vcam` alone the
+  settings were accepted but the camera never connected (`02 79` after ~13 s).
+
+Resolution `04` = 720p, `0a` = 1080p (as Moblin); Mimo offered 4000 and 6000 kbit/s. `08/79 01`
+reads the stored settings back: `00 01 8a 00 <resolution> <kbit/s> 00 01 00 00 00 00 7f 00
+<address, NUL-padded to 127>`. **The preview stays 1080p** whatever is stored. Unknown: `fe 01`
+(stored as `00 01`), the frame rate field. The camera pushes H.264 and AAC 48 kHz stereo.
 
 **Network list `07/AC`** (pushed after `07/AB`): a 4-byte header (`01 11 00 00`; a short
 follow-up push had `01 11 04 00`), then per network `[length incl. itself] 01 01 <band> <flag> 00

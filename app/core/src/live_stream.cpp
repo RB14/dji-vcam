@@ -9,7 +9,9 @@ namespace {
 constexpr std::size_t kMaxSsid = 32;
 constexpr std::size_t kMaxPassword = 63;
 // The start command's payload stays well inside one DUML frame over Bluetooth (Mimo's: 141 bytes).
-constexpr std::size_t kMaxStartPayload = 400;
+// The camera keeps the settings' JSON in a 128-byte buffer, it seems: it refused JSON of 130 and 133
+// bytes as busy (d6) and took 125 and 127 (2026-09-26); DJI Mimo's is 127.
+constexpr std::size_t kMaxSettingsJson = 127;
 
 // The camera's JSON has its slashes escaped ("rtmp:\/\/host"), as DJI Mimo sends it.
 std::string escape_json(std::string_view text) {
@@ -21,6 +23,13 @@ std::string escape_json(std::string_view text) {
         out += c;
     }
     return out;
+}
+
+// DJI Mimo's JSON for the settings, with the slashes escaped as it does.
+std::string settings_json(const StreamSettings& settings) {
+    return "{\"rtmpAddress\":\"" + escape_json(settings.url) +
+           "\",\"watermark\":0,\"codec\":\"\",\"EnhancedRTMP\":false,\"supportStopLive\":" +
+           (settings.support_stop_live ? "true}" : "false}");
 }
 
 }  // namespace
@@ -43,20 +52,22 @@ Command join_network(std::string_view ssid, std::string_view password) {
     return {duml::kAddrWifi, 0x07, 0x47, std::move(payload)};
 }
 
-Command start_stream(const StreamSettings& settings) {
+bool fits(const StreamSettings& settings) { return !settings.url.empty() && settings_json(settings).size() <= kMaxSettingsJson; }
+
+Command stream_settings(const StreamSettings& settings) {
+    if (!fits(settings)) {
+        throw std::invalid_argument("the RTMP address is empty or too long for the camera");
+    }
     // 01 8a 00 <resolution> <kbit/s u16 LE> fe 01 00 00 00 00 7f 00, then JSON (protocol-notes 3.13).
     Bytes payload = {0x01, 0x8A, 0x00, static_cast<std::uint8_t>(settings.resolution),
                      static_cast<std::uint8_t>(settings.kbps & 0xFF), static_cast<std::uint8_t>(settings.kbps >> 8),
                      0xFE, 0x01, 0x00, 0x00, 0x00, 0x00, 0x7F, 0x00};
-    const std::string json = "{\"rtmpAddress\":\"" + escape_json(settings.url) +
-                             "\",\"watermark\":0,\"codec\":\"\",\"EnhancedRTMP\":false,\"supportStopLive\":" +
-                             (settings.support_stop_live ? "true}" : "false}");
+    const std::string json = settings_json(settings);
     payload.insert(payload.end(), json.begin(), json.end());
-    if (settings.url.empty() || payload.size() > kMaxStartPayload) {
-        throw std::invalid_argument("the RTMP address is empty or too long");
-    }
     return {kAddrLive, 0x08, 0x78, std::move(payload)};
 }
+
+Command start_stream() { return {kAddrLive, 0x02, 0x8E, {0x01, 0x01, 0x1A, 0x00, 0x01, 0x01}}; }
 
 Command stop_stream() { return {kAddrLive, 0x02, 0x8E, {0x01, 0x01, 0x1A, 0x00, 0x01, 0x02}}; }
 
