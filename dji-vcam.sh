@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
 # dji-vcam: entry point for the project's tools.
 #
-# The Python tools run on *Windows* Python (from WSL): Bluetooth, the serial ports and the ESP32
-# USB network adapter all live on the Windows host. The venv at .venv is therefore a Windows venv.
+# The Python tools run on *Windows* Python (from WSL): Bluetooth lives on the Windows host. The venv
+# at .venv is therefore a Windows venv.
 #
 # Usage: ./dji-vcam.sh <command> [args]
-#   ble scan|creds [--bridge COMx] [-v]   pair with the camera over BLE, read its AP credentials
-#   bridge [--port COMx] <console cmd>    talk to the ESP32 USB Wi-Fi bridge (status, scan, wifi ...)
+#   ble scan|creds [-v]                   pair with the camera over BLE, read its AP credentials
 #   live [--seconds N] [-v]               open the camera datalink and try to start the live view
 #   fake-camera [--video FILE]            stand-in for the camera's datalink side (app development)
 #   capture prepare|start|stop|pull       record a Mimo session on the rooted Android phone
-#   flash-bridge <COMx>                   full flash of firmware/usb-wifi-bridge (board in download mode)
-#   ota-bridge [--port COMx]              update the running bridge over its USB console (no buttons)
 #   test                                  run the unit tests
 set -euo pipefail
 
@@ -48,9 +45,6 @@ case "$command" in
     ble)
         "$PYTHON" "$(win "$SCRIPT_DIR/tools/dji_ble.py")" "$@"
         ;;
-    bridge)
-        "$PYTHON" "$(win "$SCRIPT_DIR/tools/bridge_console.py")" "$@"
-        ;;
     live)
         "$PYTHON" "$(win "$SCRIPT_DIR/tools/dji_liveview.py")" "$@"
         ;;
@@ -60,27 +54,10 @@ case "$command" in
     capture)
         "$SCRIPT_DIR/tools/phone_capture.sh" "$@"
         ;;
-    flash-bridge)
-        # Full flash with esptool (board in download mode: hold BOOT while plugging it in, or use the
-        # board's UART port). Offsets and files come from ESP-IDF's own build/flash_args.
-        port="${1:?usage: flash-bridge <COMx>}"
-        build="$SCRIPT_DIR/firmware/usb-wifi-bridge/build"
-        read -r -a opts < "$build/flash_args"
-        images=()
-        while read -r offset file; do
-            images+=("$offset" "$(win "$build/$file")")
-        done < <(tail -n +2 "$build/flash_args")
-        "$PYTHON" -m esptool --chip esp32s3 --port "$port" -b 921600 \
-            --before default-reset --after watchdog-reset write-flash "${opts[@]//_/-}" "${images[@]}"
-        ;;
-    ota-bridge)
-        # Firmware update over the running bridge's USB console; no buttons needed.
-        "$PYTHON" "$(win "$SCRIPT_DIR/tools/bridge_ota.py")" "$@"
-        ;;
     test)
         cd "$SCRIPT_DIR/tools" && "$PYTHON" -m unittest -v
         ;;
     *)
-        sed -n '2,16p' "$0"
+        sed -n '2,12p' "$0"
         ;;
 esac

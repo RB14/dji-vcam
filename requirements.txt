@@ -1,2 +1,1 @@
 bleak>=0.22
-esptool>=4.8

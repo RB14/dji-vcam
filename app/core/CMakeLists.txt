@@ -12,7 +12,6 @@ add_library(djivcam_core STATIC
     src/camera_model.cpp
     src/camera_protocol.cpp
     src/session.cpp
-    src/wifi_channel.cpp
 )
 target_include_directories(djivcam_core PUBLIC include "${CMAKE_CURRENT_BINARY_DIR}/include")
 configure_file(include/djivcam/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/include/djivcam/version.h" @ONLY)

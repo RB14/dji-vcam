@@ -9,10 +9,6 @@ __pycache__/
 captures/
 
 # ESP-IDF build output and generated config
-firmware/*/build/
-firmware/*/managed_components/
-firmware/*/sdkconfig
-firmware/*/sdkconfig.old
 
 # Raw flash dumps
 firmware/backups/

@@ -7,7 +7,6 @@ Every request the camera sends us is acknowledged, otherwise it drops the link.
 Runs on Windows Python (BLE lives on the Windows host). Examples:
     dji_ble.py scan
     dji_ble.py creds                       # pair + print/save SSID and password
-    dji_ble.py creds --bridge COM8         # ...and hand them to the ESP32 USB Wi-Fi bridge
 """
 
 from __future__ import annotations
@@ -203,8 +202,6 @@ async def read_credentials(args: argparse.Namespace) -> dict[str, str] | None:
         CREDENTIALS_FILE.write_text(json.dumps(creds, indent=2))
         log(f"camera AP: ssid={ssid!r} password={mask(password)} (saved to {CREDENTIALS_FILE.name})")
 
-        if args.bridge:
-            push_to_bridge(args.bridge, ssid, password)
         if args.hold:
             log(f"holding BLE link for {args.hold:.0f}s (keepalive 00/2b every 1s)")
             deadline = time.monotonic() + args.hold
@@ -212,17 +209,6 @@ async def read_credentials(args: argparse.Namespace) -> dict[str, str] | None:
                 await link.send(duml.ADDR_SESSION, 0x00, 0x2B, b"\x01\x01")
                 await asyncio.sleep(1.0)
         return creds
-
-
-def push_to_bridge(port_name: str, ssid: str, password: str) -> None:
-    import serial
-
-    with serial.Serial(port_name, 115200, timeout=0.5) as port:
-        port.dtr = True
-        port.write(f'wifi "{ssid}" "{password}"\n'.encode())
-        time.sleep(0.5)
-        reply = port.read(port.in_waiting or 1).decode(errors="replace").strip()
-        log(f"bridge: {reply.replace(password, mask(password))}")
 
 
 async def scan(args: argparse.Namespace) -> None:
@@ -244,7 +230,6 @@ def main() -> None:
     parser.add_argument("action", choices=["scan", "creds"])
     parser.add_argument("--scan-seconds", type=float, default=10.0)
     parser.add_argument("--approval-timeout", type=float, default=60.0)
-    parser.add_argument("--bridge", help="COM port of the ESP32 USB Wi-Fi bridge console")
     parser.add_argument("--hold", type=float, default=0.0, help="keep the BLE link open this many seconds")
     parser.add_argument("-v", "--verbose", action="store_true", help="log every DUML frame")
     parser.add_argument("--all", action="store_true", help="scan: list non-DJI devices too")
