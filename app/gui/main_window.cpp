@@ -256,6 +256,11 @@ MainWindow::MainWindow(QWidget* parent)
     connect(connector_, &CameraConnector::joinFailed, this, &MainWindow::onJoinFailed);
     connect(connector_, &CameraConnector::joined, this, &MainWindow::onJoined);
     connect(connector_, &CameraConnector::linkLost, this, &MainWindow::onLinkLost);
+    connect(connector_, &CameraConnector::stopped, this, [this] {
+        if (!connect_action_->isChecked() && rtmp_) {
+            rtmp_->stop();
+        }
+    });
     // On the RTMP feed the camera's settings go over the Bluetooth link.
     connect(connector_, &CameraConnector::cameraChanged, this, [this] {
         const auto state = connector_->takeCameraState();
@@ -271,6 +276,9 @@ MainWindow::MainWindow(QWidget* parent)
         }
     });
     connect(connector_, &CameraConnector::streamStarted, this, [this](bool ok) {
+        if (!connect_action_->isChecked()) {
+            return;  // news from a session already stopped
+        }
         qInfo("rtmp: the camera %s", ok ? "pushes its RTMP stream" : "refused the RTMP stream");
         if (!ok) {
             showStage(tr("The camera refused to start its RTMP stream: try the low-latency feed"), true);
@@ -329,9 +337,10 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::~MainWindow() {
     finder_ = {};  // stops a lookup still running
-    connector_->stop();
     camera_panel_->setController(nullptr);  // the controller goes away with the pipeline's session
     pipeline_->stop();
+    connector_->stop();
+    connector_->wait();  // the camera back in Video mode, its push stopped, before go2rtc goes
     if (rtmp_) {
         rtmp_->stop();
     }
@@ -468,11 +477,11 @@ void MainWindow::toggleConnection(bool connect) {
     decoder_choice_->setEnabled(!connect);
     if (!connect) {
         finder_ = {};
-        connector_->stop();  // back to Video mode: the camera returns to its own access point
+        // The live view first, while the camera is still there: it ends at once. Then the goodbye
+        // (back to Video mode: the camera returns to its own access point), in the background;
+        // go2rtc stops after it (stopped()), so the camera's push ends before its server.
         stopFeed();
-        if (rtmp_) {
-            rtmp_->stop();
-        }
+        connector_->stop();
         joined_ssid_.clear();
         camera_ip_.clear();
         rtmp_requested_ = false;
@@ -539,6 +548,9 @@ void MainWindow::updateNetworkLabel() {
 
 void MainWindow::onConnectorStage(Stage stage, const QString& detail) {
     qInfo("bluetooth: %s", qPrintable(detail));
+    if (!connect_action_->isChecked()) {
+        return;  // news from a session already stopped, e.g. while it says goodbye
+    }
     if (!streaming_ && stage != Stage::Idle) {
         showStage(detail, stage == Stage::ApprovalNeeded || stage == Stage::Failed || stage == Stage::NeedNetwork);
     }
@@ -580,6 +592,9 @@ void MainWindow::askNetwork(const QString& error) {
 
 void MainWindow::onNetworksFound(const QList<CameraNetwork>& networks) {
     qInfo("bluetooth: the camera hears %lld networks", static_cast<long long>(networks.size()));
+    if (!connect_action_->isChecked()) {
+        return;
+    }
     if (!network_dialog_ && joined_ssid_.isEmpty()) {
         askNetwork({});  // no network chosen yet: the connector scanned to ask for one
     }
@@ -590,6 +605,9 @@ void MainWindow::onNetworksFound(const QList<CameraNetwork>& networks) {
 
 void MainWindow::onJoinFailed(const QString& ssid) {
     qInfo("bluetooth: the camera could not join %s", qPrintable(ssid));
+    if (!connect_action_->isChecked()) {
+        return;
+    }
     showStage(tr("The camera could not join %1").arg(ssid), true);
     askNetwork(tr("The camera could not join %1. Check the password, and that the camera can reach this "
                   "network (2.4 GHz, unless the camera's Wi-Fi band is set to 5 GHz).")
@@ -598,6 +616,9 @@ void MainWindow::onJoinFailed(const QString& ssid) {
 }
 
 void MainWindow::onJoined(const QString& ssid, const QString& mac) {
+    if (!connect_action_->isChecked()) {
+        return;
+    }
     joined_ssid_ = ssid;
     camera_mac_ = mac;
     camera_ip_.clear();
@@ -786,6 +807,9 @@ void MainWindow::showStreamAddresses() {
 
 void MainWindow::onSessionState(const QString& state, const QString& detail) {
     qInfo("session: %s%s", qPrintable(state), detail.isEmpty() ? "" : qPrintable(" (" + detail + ")"));
+    if (!pipeline_->running()) {
+        return;  // queued before Disconnect: "Not connected" stays
+    }
     const bool was_streaming = streaming_;
     streaming_ = state == QLatin1String("streaming");
     if (was_streaming && !streaming_) {

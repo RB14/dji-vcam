@@ -59,7 +59,12 @@ public:
     // Starts pushing RTMP while joined (streamStarted()). There is no stop without leaving the
     // network: to go back, setNetwork() again (the camera rejoins without the push).
     void startStream(const djivcam::live::StreamSettings& settings);
+    // Ends the session without waiting: the goodbye (the push stopped, Video mode, which sends the
+    // camera back to its access point; seconds of Bluetooth round trips) finishes in the background,
+    // then stopped(). A start() meanwhile begins once it is done.
     void stop();
+    // Waits until a stop() has finished (e.g. before the app exits).
+    void wait();
 
     // The camera's settings over the Bluetooth link, as DJI Mimo changes them during its livestream:
     // for the RTMP feed, where the live view's connection that otherwise carries them does not run.
@@ -85,6 +90,8 @@ signals:
     void cameraChanged();
     // A camera setting failed, with the reason.
     void cameraError(const QString& message);
+    // A stopped session has said goodbye (stop()).
+    void stopped();
 
 private:
     struct Request {
@@ -109,6 +116,7 @@ private:
     void set_joined(bool joined);
 
     std::jthread worker_;
+    std::jthread finishing_;  // a stopped session saying goodbye; the next worker waits for it
     std::mutex mutex_;
     std::condition_variable_any requested_;
     Request pending_;

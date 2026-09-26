@@ -52,7 +52,10 @@ CameraConnector::CameraConnector(QObject* parent) : QObject(parent) {
         [this](const std::string& error) { emit cameraError(QString::fromStdString(error)); });
 }
 
-CameraConnector::~CameraConnector() { stop(); }
+CameraConnector::~CameraConnector() {
+    stop();
+    wait();  // the camera back in Video mode before the app goes
+}
 
 bool CameraConnector::bluetoothAvailable() { return djivcam::ble::CameraBle::bluetooth_available(); }
 
@@ -66,7 +69,13 @@ void CameraConnector::start(const QString& identifier, const QString& token, con
             pending_.network = std::pair{ssid, password};
         }
     }
-    worker_ = std::jthread([this, identifier, token, address](std::stop_token stop) { run(stop, identifier, token, address); });
+    worker_ = std::jthread([this, identifier, token, address, previous = std::move(finishing_)](std::stop_token stop) mutable {
+        if (previous.joinable()) {
+            previous.join();  // one Bluetooth session at a time: the last one's goodbye first
+        }
+        run(stop, identifier, token, address);
+        emit stopped();
+    });
 }
 
 void CameraConnector::setNetwork(const QString& ssid, const QString& password) {
@@ -97,9 +106,15 @@ void CameraConnector::stop() {
     if (worker_.joinable()) {
         worker_.request_stop();
         requested_.notify_all();
-        worker_.join();
+        finishing_ = std::move(worker_);  // empty: start() hands the previous one to its worker
     }
     emit stageChanged(Stage::Idle, {});
+}
+
+void CameraConnector::wait() {
+    if (finishing_.joinable()) {
+        finishing_.join();
+    }
 }
 
 void CameraConnector::setCameraControl(bool on) {
@@ -122,6 +137,9 @@ CameraConnector::Request CameraConnector::take_request(std::stop_token stop, std
     requested_.wait_for(lock, stop, wait, [this] {
         return pending_.network || pending_.rescan || pending_.stream || !camera_commands_.empty() || subscribe_;
     });
+    if (stop.stop_requested()) {
+        return {};  // what start() queued meanwhile is for the next worker
+    }
     return std::exchange(pending_, {});
 }
 
@@ -226,12 +244,19 @@ void CameraConnector::run(std::stop_token stop, QString identifier, QString toke
                 for (const auto& item : session.scan(kNetworkScan)) {
                     heard.append({QString::fromStdString(item.ssid), item.five_ghz});
                 }
+                if (stop.stop_requested()) {
+                    break;  // disconnected meanwhile: no more news from this session
+                }
                 emit networksFound(heard);
                 rescan = false;
             }
             if (network && !on_network) {
                 emit stageChanged(Stage::Joining, tr("The camera is joining %1").arg(network->first));
-                if (!session.join(network->first.toStdString(), network->second.toStdString())) {
+                const bool ok = session.join(network->first.toStdString(), network->second.toStdString());
+                if (stop.stop_requested()) {
+                    break;
+                }
+                if (!ok) {
                     emit joinFailed(network->first);
                     network.reset();
                     continue;
@@ -264,7 +289,11 @@ void CameraConnector::run(std::stop_token stop, QString identifier, QString toke
                 asked = false;
             }
             if (request.stream && on_network) {
-                emit streamStarted(session.start_stream(*request.stream));
+                const bool started = session.start_stream(*request.stream);
+                if (stop.stop_requested()) {
+                    break;
+                }
+                emit streamStarted(started);
             }
         }
         set_joined(false);

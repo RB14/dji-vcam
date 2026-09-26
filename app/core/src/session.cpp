@@ -1,6 +1,7 @@
 #include "djivcam/session.h"
 
 #include <array>
+#include <condition_variable>
 #include <cstdio>
 #include <mutex>
 #include <optional>
@@ -23,6 +24,14 @@ constexpr auto kHeartbeatInterval = 200ms;
 constexpr auto kRegisterInterval = 1000ms;
 constexpr auto kTriggerInterval = 2000ms;
 constexpr auto kRouteRetry = 500ms;
+
+// Sleeps, but returns as soon as `stop` is requested.
+void pause(std::stop_token stop, std::chrono::milliseconds duration) {
+    std::mutex mutex;
+    std::condition_variable_any woken;
+    std::unique_lock lock(mutex);
+    woken.wait_for(lock, stop, duration, [] { return false; });
+}
 constexpr auto kConnectRetry = 1000ms;
 constexpr auto kNoVideoReport = 6000ms;  // diagnostics cadence while a connection gets no video
 
@@ -172,7 +181,7 @@ void LiveViewSession::run(std::stop_token stop) {
                     break;
                 }
             }
-            std::this_thread::sleep_for(kRouteRetry);
+            pause(stop, kRouteRetry);
         }
         if (stop.stop_requested()) {
             break;
@@ -183,14 +192,14 @@ void LiveViewSession::run(std::stop_token stop) {
         auto socket = net::UdpSocket::open(*local_ip);
         if (!socket) {
             set_state(SessionState::Connecting, "cannot open UDP socket on " + *local_ip);
-            std::this_thread::sleep_for(kConnectRetry);
+            pause(stop, kConnectRetry);
             continue;
         }
         datalink::Link link(std::move(*socket), config_.camera_ip, config_.port);
         link.poke(config_.identifier, config_.token);
         if (!link.handshake()) {
             set_state(SessionState::Connecting, "no handshake reply");
-            std::this_thread::sleep_for(kConnectRetry);
+            pause(stop, kConnectRetry);
             continue;
         }
         link.settle();
@@ -355,7 +364,7 @@ void LiveViewSession::run(std::stop_token stop) {
         tracker.fail_all();  // the link is going down: nobody will answer
         fail_outgoing();
         if (gave_up) {
-            std::this_thread::sleep_for(kConnectRetry);
+            pause(stop, kConnectRetry);
         }
     }
 }
