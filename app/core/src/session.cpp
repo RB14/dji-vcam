@@ -162,13 +162,13 @@ void LiveViewSession::run(std::stop_token stop) {
         }
         first_attempt = false;
 
-        // 1. Wait until connections are allowed and this host has an address on the camera subnet.
+        // 1. Wait until connections are allowed and this computer is on the camera's network.
         set_state(SessionState::WaitingForRoute, "");
         std::optional<std::string> local_ip;
         while (!stop.stop_requested()) {
             if (connect_allowed_) {
                 local_ip = net::local_ip_towards(config_.camera_ip, config_.port);
-                if (local_ip && local_ip->starts_with(config_.camera_subnet_prefix)) {
+                if (local_ip && net::same_network(*local_ip, config_.camera_ip)) {
                     break;
                 }
             }

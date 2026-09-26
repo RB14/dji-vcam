@@ -1,5 +1,6 @@
 #include "djivcam/net.h"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstdio>
@@ -28,6 +29,14 @@ using namespace std::chrono_literals;
 constexpr std::uint16_t kDiscardPort = 9;
 constexpr auto kPoll = 200ms;
 constexpr auto kNudgeAgain = 1500ms;
+// How long a freshly confirmed neighbour entry is preferred over an older one: the sweep makes the
+// OS resolve new addresses within milliseconds, while an old entry is only re-checked after seconds.
+constexpr auto kFreshGrace = 1s;
+
+struct Neighbor {
+    std::string ip;
+    bool confirmed = false;  // reachable just now, not only remembered
+};
 
 std::uint32_t parse_ipv4(const std::string& ip) {
     in_addr address{};
@@ -48,24 +57,23 @@ std::string format_mac(const unsigned char* bytes) {
 }
 #endif
 
-// The neighbour table's resolved entries: IP of the given MAC, if any.
-std::optional<std::string> lookup(const std::string& mac) {
+// The neighbour table's resolved entries for the given MAC.
+std::vector<Neighbor> lookup(const std::string& mac) {
+    std::vector<Neighbor> found;
 #ifdef _WIN32
     PMIB_IPNET_TABLE2 table = nullptr;
     if (GetIpNetTable2(AF_INET, &table) != NO_ERROR) {
-        return std::nullopt;
+        return found;
     }
-    std::optional<std::string> found;
-    for (ULONG i = 0; i < table->NumEntries && !found; ++i) {
+    for (ULONG i = 0; i < table->NumEntries; ++i) {
         const MIB_IPNET_ROW2& row = table->Table[i];
         const bool resolved = row.State == NlnsReachable || row.State == NlnsStale || row.State == NlnsDelay ||
                               row.State == NlnsProbe || row.State == NlnsPermanent;
         if (resolved && row.PhysicalAddressLength == 6 && format_mac(row.PhysicalAddress) == mac) {
-            found = format_ipv4(ntohl(row.Address.Ipv4.sin_addr.s_addr));
+            found.push_back({format_ipv4(ntohl(row.Address.Ipv4.sin_addr.s_addr)), row.State == NlnsReachable});
         }
     }
     FreeMibTable(table);
-    return found;
 #else
     std::ifstream arp("/proc/net/arp");
     std::string line;
@@ -75,11 +83,11 @@ std::optional<std::string> lookup(const std::string& mac) {
         std::string ip, type, flags, hw;
         fields >> ip >> type >> flags >> hw;
         if (flags != "0x0" && normalize_mac(hw) == mac) {
-            return ip;
+            found.push_back({ip, true});  // /proc/net/arp does not tell how fresh an entry is
         }
     }
-    return std::nullopt;
 #endif
+    return found;
 }
 
 }  // namespace
@@ -148,6 +156,28 @@ std::vector<std::string> sweep_targets(const LocalNetwork& network) {
     return targets;
 }
 
+bool on_network(const LocalNetwork& network, const std::string& ip) {
+    const std::uint32_t local = parse_ipv4(network.ip);
+    const std::uint32_t other = parse_ipv4(ip);
+    if (local == 0 || other == 0 || network.prefix_length <= 0 || network.prefix_length > 32) {
+        return false;
+    }
+    const std::uint32_t mask = network.prefix_length == 32 ? 0xFFFFFFFFu : ~(0xFFFFFFFFu >> network.prefix_length);
+    return (local & mask) == (other & mask);
+}
+
+bool same_network(const std::string& local_ip, const std::string& ip) {
+    const std::uint32_t local = parse_ipv4(local_ip);
+    const std::uint32_t other = parse_ipv4(ip);
+    if ((local >> 24) == 127 && (other >> 24) == 127) {
+        return true;  // e.g. tools/fake_camera.py
+    }
+    const auto networks = local_networks();
+    return std::any_of(networks.begin(), networks.end(), [&](const LocalNetwork& network) {
+        return network.ip == local_ip && on_network(network, ip);
+    });
+}
+
 std::string normalize_mac(std::string_view mac) {
     std::string digits;
     for (char c : mac) {
@@ -173,20 +203,33 @@ std::optional<std::string> find_ip_by_mac(std::string_view mac_text, std::chrono
     if (mac.empty()) {
         return std::nullopt;
     }
+    const std::vector<LocalNetwork> networks = local_networks();
     std::vector<std::string> targets;
-    for (const LocalNetwork& network : local_networks()) {
+    for (const LocalNetwork& network : networks) {
         const auto more = sweep_targets(network);
         targets.insert(targets.end(), more.begin(), more.end());
     }
     auto socket = UdpSocket::open({});
     const std::array<std::uint8_t, 1> nudge = {0};
-    const auto until = std::chrono::steady_clock::now() + timeout;
-    auto next_nudge = std::chrono::steady_clock::now();
+    const auto start = std::chrono::steady_clock::now();
+    const auto until = start + timeout;
+    auto next_nudge = start;
     while (true) {
-        if (auto ip = lookup(mac)) {
-            return ip;
-        }
         const auto now = std::chrono::steady_clock::now();
+        std::optional<std::string> older;
+        for (const Neighbor& neighbor : lookup(mac)) {
+            const bool local = std::any_of(networks.begin(), networks.end(),
+                                           [&](const LocalNetwork& network) { return on_network(network, neighbor.ip); });
+            if (local && neighbor.confirmed) {
+                return neighbor.ip;
+            }
+            if (local && !older) {
+                older = neighbor.ip;
+            }
+        }
+        if (older && now - start >= kFreshGrace) {
+            return older;
+        }
         if (now >= until || stop.stop_requested()) {
             return std::nullopt;
         }

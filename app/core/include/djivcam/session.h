@@ -32,8 +32,6 @@ const char* to_string(SessionState state);
 struct SessionConfig {
     std::string camera_ip = "192.168.2.1";
     std::uint16_t port = 9004;
-    // Local addresses must be on the camera's subnet (this computer on the camera's network).
-    std::string camera_subnet_prefix = "192.168.2.";
     // Pairing identifier/token used for the TCP 7001 poke. It must be the pair the Bluetooth link
     // paired with: with another token the camera sends no video (tested 2026-09-25).
     std::string identifier = "284ae5b8d76b3375a04a6417ad71bea3";

@@ -657,7 +657,6 @@ void MainWindow::startLowLatency() {
     config.identifier = pairingIdentifier().toStdString();
     config.token = kPairingToken.toStdString();
     config.camera_ip = camera_ip_.toStdString();
-    config.camera_subnet_prefix = camera_ip_.left(camera_ip_.lastIndexOf(QLatin1Char('.')) + 1).toStdString();
     camera_panel_->setController(nullptr);
     camera_panel_->setUnavailable({});
     settings_over_bluetooth_ = false;

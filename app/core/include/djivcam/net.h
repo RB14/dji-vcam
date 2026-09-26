@@ -26,14 +26,23 @@ std::vector<LocalNetwork> local_networks();
 // is smaller), except this computer.
 std::vector<std::string> sweep_targets(const LocalNetwork& network);
 
+// Whether `ip` is an address on `network` (inside its prefix).
+bool on_network(const LocalNetwork& network, const std::string& ip);
+
+// Whether this computer reaches `ip` directly from its address `local_ip`, both on one of its
+// networks (not through a router, not through an adapter that is gone). Loopback counts too.
+bool same_network(const std::string& local_ip, const std::string& ip);
+
 // "58:b8:58:00:00:01" from "58-B8-58-00-00-01", "58:B8:58:00:00:01" or "58b858000001"; empty if it is
 // not a MAC.
 std::string normalize_mac(std::string_view mac);
 
 // The IPv4 address of the device with this MAC on a network this computer is on (e.g. the camera
 // after it joined the Wi-Fi): sends every address of each local network a small UDP datagram, which
-// makes the OS resolve it, and looks the MAC up in the neighbour table. nullopt if not found within
-// `timeout` or when `stop` is requested.
+// makes the OS resolve it, and looks the MAC up in the neighbour table. Only entries on those
+// networks count: the table keeps old ones, e.g. the camera's access-point address from an adapter
+// that is gone (the camera has one MAC for both). A freshly confirmed entry wins; an older one is
+// taken after a short grace. nullopt if not found within `timeout` or when `stop` is requested.
 std::optional<std::string> find_ip_by_mac(std::string_view mac, std::chrono::milliseconds timeout,
                                           std::stop_token stop = {});
 

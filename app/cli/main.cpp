@@ -569,7 +569,6 @@ int main(int argc, char* argv[]) {
     config.answer_requests = !no_answer;
     if (!camera_ip.empty()) {
         config.camera_ip = camera_ip;
-        config.camera_subnet_prefix = camera_ip.substr(0, camera_ip.rfind('.') + 1);
     }
     if (!identifier_file.empty()) {
         std::ifstream in(identifier_file);
