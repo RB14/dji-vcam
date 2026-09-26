@@ -2,6 +2,8 @@ add_library(djivcam_core STATIC
     src/datalink.cpp
     src/duml.cpp
     src/h264.cpp
+    src/live_session.cpp
+    src/live_stream.cpp
     src/net.cpp
     src/reassembler.cpp
     src/request_tracker.cpp
