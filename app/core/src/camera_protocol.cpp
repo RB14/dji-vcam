@@ -211,6 +211,19 @@ std::string_view name(Setting setting) {
 std::span<const Choice> resolutions() { return kResolutions; }
 std::span<const Choice> frame_rates() { return kFrameRates; }
 
+int frames_per_second(int frame_rate) {
+    for (const Choice& choice : kFrameRates) {
+        if (choice.code == frame_rate) {
+            int fps = 0;
+            for (char digit : choice.label) {
+                fps = fps * 10 + (digit - '0');
+            }
+            return fps;
+        }
+    }
+    return 0;
+}
+
 std::string describe_format(int resolution, int frame_rate) {
     return label_of(kResolutions, resolution) + ", " + label_of(kFrameRates, frame_rate) + " fps";
 }

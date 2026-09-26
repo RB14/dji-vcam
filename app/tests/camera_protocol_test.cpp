@@ -187,6 +187,13 @@ TEST(CameraProtocol, ReadsBatteryPush) {
     EXPECT_TRUE(state.charging);
 }
 
+TEST(CameraProtocol, KnowsTheFramesPerSecond) {
+    EXPECT_EQ(frames_per_second(0x03), 30);
+    EXPECT_EQ(frames_per_second(0x0A), 100);
+    EXPECT_EQ(frames_per_second(0x08), 240);
+    EXPECT_EQ(frames_per_second(0x7F), 0);
+}
+
 TEST(CameraProtocol, LabelsKnownAndUnknownCodes) {
     EXPECT_EQ(describe(Setting::Stabilization, 0x03), "RockSteady+");
     EXPECT_EQ(describe(Setting::Ev, 16), "0");

@@ -64,6 +64,8 @@ std::string_view name(Setting setting);
 // Video resolution codes (02/18); the aspect ratio is part of the resolution.
 std::span<const Choice> resolutions();
 std::span<const Choice> frame_rates();
+// Frames per second of a frame rate code (0x03 -> 30); 0 if unknown.
+int frames_per_second(int frame_rate);
 std::string describe_format(int resolution, int frame_rate);
 
 // --- Commands ---------------------------------------------------------------------------------

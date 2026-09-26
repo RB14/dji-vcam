@@ -299,9 +299,14 @@ void CameraPanel::updateWhiteBalance() {
 }
 
 void CameraPanel::updateShutter() {
+    // A video frame cannot be exposed longer than it lasts: at 30 fps, 1/30 s is the slowest (the
+    // camera turns 1/24 into 1/30).
+    const int fps = state_.frame_rate ? djivcam::camera::frames_per_second(*state_.frame_rate) : 0;
     std::vector<std::pair<QString, int>> items;
     for (int speed : kShutterSpeeds) {
-        items.emplace_back(QStringLiteral("1/%1").arg(speed), speed);
+        if (speed >= fps) {
+            items.emplace_back(QStringLiteral("1/%1").arg(speed), speed);
+        }
     }
     // In auto exposure this is the metered shutter speed; seconds-long ones cannot be set here.
     std::optional<int> current;
