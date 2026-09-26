@@ -1,20 +1,27 @@
 // Main window: live preview, connect/disconnect, options and what the app is doing right now.
+//
+// Connecting puts the camera on a Wi-Fi network over Bluetooth (CameraConnector), finds its address
+// there, and plays one of two feeds: the low-latency live view (the camera's own protocol) or its
+// RTMP push through the local RTMP server (RtmpServer). Either one also feeds the DJI VCam webcam.
 #pragma once
 
-#include <QElapsedTimer>
 #include <QMainWindow>
+#include <QPointer>
+
+#include <thread>
 
 #include "camera_connector.h"
 
 class QAction;
 class CameraPanel;
+class NetworkDialog;
 class QStackedWidget;
-class QThread;
 class QComboBox;
 class QLabel;
 class QSettings;
 class Pipeline;
 class PreviewWidget;
+class RtmpServer;
 struct LiveStats;
 
 namespace djivcam::vcam {
@@ -31,28 +38,43 @@ public:
     void connectCamera();
     // Plays a recorded H.264 stream instead of connecting to the camera (testing without one).
     void replayFile(const QString& path);
+    // Plays a network stream the way the RTMP feed does, without the camera (testing).
+    void playStream(const QString& url);
     // Replaces the stored pairing identifier (e.g. one the camera already approved).
     void importPairingIdentifier(const QString& identifier);
 
 private:
+    enum class Feed { LowLatency, Rtmp };
+
     void toggleConnection(bool connect);
-    void onSessionState(const QString& state, const QString& detail);
     void onConnectorStage(CameraConnector::Stage stage, const QString& detail);
-    void onWifiReady(const QString& ssid, const QString& password);
-    // Picks the camera's Wi-Fi channel for this Connect (Options: automatic or fixed); the connector
-    // moves it in its Bluetooth session.
-    void chooseWifiChannel();
+    void onNetworksFound(const QList<CameraNetwork>& networks);
+    void onJoinFailed(const QString& ssid);
+    void onJoined(const QString& ssid, const QString& mac);
+    // The camera's address on the network (empty: this computer does not see it).
+    void onCameraAddress(const QString& ip);
+    void onLinkLost();
+    // Plays the chosen feed from the camera found at camera_ip_.
+    void startFeed();
+    void startLowLatency();
+    void startRtmp();
+    void stopFeed();
+    void onFeedChosen();
+    void onSessionState(const QString& state, const QString& detail);
     void onStats(const LiveStats& stats);
     void onDecoder(const QString& backend, const QString& gpu, bool hardware);
-    // The camera's last known Wi-Fi channel, in the settings and the status bar (0: unknown).
-    void setKnownWifiChannel(int channel);
-    void showWifiChannel();
+    // The network dialog (the camera's scan list, a hidden network, the password).
+    void askNetwork(const QString& error);
+    void showStreamAddresses();
     void forgetCamera();
     void showAbout();
     void showStage(const QString& text, bool attention = false);
     // Replaces the video by the status label (not connected, connecting, video lost).
     void showStatusView();
+    void updateNetworkLabel();
     QString pairingIdentifier();
+    QString networkPassword() const;
+    Feed feed() const;
     void enableVirtualCamera(bool on);
     // Saves the current live-view frame as a PNG in Pictures\DJI VCam.
     void saveSnapshot();
@@ -61,31 +83,34 @@ private:
     QSettings* settings_;
     Pipeline* pipeline_;
     CameraConnector* connector_;
+    RtmpServer* rtmp_ = nullptr;  // null if the app ships without one
     PreviewWidget* preview_;
     // The video, or instead of it (no video yet, or lost) a label saying what the app is doing.
     QStackedWidget* view_;
     QLabel* status_view_;
     CameraPanel* camera_panel_;
     QAction* connect_action_;
-    QAction* bluetooth_action_;
-    QAction* bridge_action_;
     QAction* startup_action_;
     QAction* vcam_action_;
     QLabel* vcam_label_;
     djivcam::vcam::VirtualCamera* virtual_camera_ = nullptr;
+    QComboBox* feed_choice_;
     QComboBox* decoder_choice_;
     QLabel* camera_label_;
     QLabel* state_label_;
     QLabel* format_label_;
+    QLabel* network_label_;
     QLabel* stats_label_;
     QLabel* decoder_label_;
-    QLabel* wifi_label_;
+    QPointer<NetworkDialog> network_dialog_;
 
-    CameraConnector::Stage connector_stage_ = CameraConnector::Stage::Idle;
     bool streaming_ = false;
     QString replay_file_;  // set: "Connect" replays this file instead
-    QElapsedTimer network_missing_;  // how long the session has been waiting for the camera network
-    bool channel_scanned_ = false;       // the automatic channel choice scans once per app run
-    QThread* channel_scan_ = nullptr;    // the bridge scan behind it (it uses the bridge's console)
-    unsigned stats_seconds_ = 0;     // for a stats line in the log every 10 s
+    QString stream_url_;   // set: "Connect" plays this stream instead
+    QString joined_ssid_;  // the network the camera is on (empty: not joined)
+    QString camera_ip_;    // its address there (empty: not known yet)
+    QString camera_mac_;
+    std::jthread finder_;  // looks up camera_ip_ from its MAC
+    bool rtmp_requested_ = false;  // the camera was asked to push RTMP in this join
+    unsigned stats_seconds_ = 0;   // for a stats line in the log every 10 s
 };

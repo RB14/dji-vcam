@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <stop_token>
 #include <span>
 #include <string>
 #include <string_view>
@@ -31,8 +32,10 @@ std::string normalize_mac(std::string_view mac);
 
 // The IPv4 address of the device with this MAC on a network this computer is on (e.g. the camera
 // after it joined the Wi-Fi): sends every address of each local network a small UDP datagram, which
-// makes the OS resolve it, and looks the MAC up in the neighbour table. nullopt within `timeout`.
-std::optional<std::string> find_ip_by_mac(std::string_view mac, std::chrono::milliseconds timeout);
+// makes the OS resolve it, and looks the MAC up in the neighbour table. nullopt if not found within
+// `timeout` or when `stop` is requested.
+std::optional<std::string> find_ip_by_mac(std::string_view mac, std::chrono::milliseconds timeout,
+                                          std::stop_token stop = {});
 
 // Connects to ip:port, sends `data`, keeps the connection for `linger`, then closes it.
 bool tcp_send_once(const std::string& ip, std::uint16_t port, std::span<const std::uint8_t> data,

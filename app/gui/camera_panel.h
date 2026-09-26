@@ -30,6 +30,12 @@ public:
 
     // The camera to control, or null when not connected to one.
     void setController(djivcam::camera::CameraController* controller);
+    // In Live Streaming mode (the camera on a Wi-Fi network) the shooting mode, format and codec
+    // are not the camera's usual ones (a change of mode would end the session, format changes snap
+    // back) and recording is unverified: those controls are hidden.
+    void setLiveStreaming(bool on);
+    // Why there is no camera to control (e.g. on the RTMP feed); empty for the default text.
+    void setUnavailable(const QString& reason);
     void showState(const djivcam::camera::CameraState& state);
 
 private:
@@ -53,6 +59,9 @@ private:
     djivcam::camera::CameraState state_;
     bool have_state_ = false;
 
+    QString unavailable_;
+    QWidget* shooting_ = nullptr;  // mode, format and codec
+    QWidget* actions_ = nullptr;   // record and photo
     QLabel* hint_;
     QLabel* status_;
     QPushButton* record_;

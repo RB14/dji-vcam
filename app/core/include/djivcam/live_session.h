@@ -57,7 +57,8 @@ public:
     bool start_stream(const StreamSettings& settings);
     // The livestream settings the camera stores (from the last start).
     std::optional<StreamSettings> stored_settings();
-    // Sends the keep-alive when it is due; call at least every kKeepAliveInterval while joined.
+    // Sends the keep-alive when it is due (from Live Streaming mode on, as DJI Mimo does); call at
+    // least every kKeepAliveInterval.
     void keep_alive(Clock::time_point now = Clock::now());
     // Ends the push and the join and returns to Video mode (the camera goes back to its access
     // point). Safe in any state.

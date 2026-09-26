@@ -1,7 +1,8 @@
 // Live-view pipeline: camera session -> access units -> decoder thread -> frames for the UI.
 //
-// A recorded stream can stand in for the camera (startReplay), which exercises everything after
-// the network (decoding, preview, virtual camera) without a camera.
+// The source is the camera's low-latency live view (start), its RTMP feed through the local RTMP
+// server (startStream), or a recorded stream standing in for the camera (startReplay), which
+// exercises everything after the network (decoding, preview, virtual camera) without a camera.
 #pragma once
 
 #include <QObject>
@@ -49,8 +50,11 @@ public:
     // Plays a recorded Annex-B H.264 file (e.g. from dji-vcam-cli --dump) in a loop at the camera's
     // 30 fps instead of connecting to the camera.
     void startReplay(const QString& path, djivcam::media::DecoderPreference decoder);
+    // Plays a network stream (the RTMP feed, read from the local RTMP server) and reconnects while it
+    // runs. The camera's settings are not available this way (camera() is null).
+    void startStream(const QString& url, djivcam::media::DecoderPreference decoder);
     void stop();
-    bool running() const { return session_ != nullptr || replay_.joinable(); }
+    bool running() const { return session_ != nullptr || replay_.joinable() || stream_.joinable(); }
 
     using Frame = std::shared_ptr<const djivcam::media::Nv12Frame>;
 
@@ -97,6 +101,7 @@ private:
     void enqueue(djivcam::h264::AccessUnit&& unit);
     void decode_loop(std::stop_token stop, djivcam::media::DecoderPreference preference);
     void replay_loop(std::stop_token stop, const std::vector<djivcam::h264::AccessUnit>& units);
+    void stream_loop(std::stop_token stop, const std::string& url);
     void report_stats();
 
     std::unique_ptr<djivcam::LiveViewSession> session_;
@@ -111,6 +116,7 @@ private:
     std::deque<QueuedUnit> queue_;
     std::jthread decoder_;
     std::jthread replay_;
+    std::jthread stream_;
     QTimer stats_timer_;
     std::atomic<std::uint64_t> decoded_frames_{0};
     std::atomic<std::uint64_t> stream_bytes_{0};

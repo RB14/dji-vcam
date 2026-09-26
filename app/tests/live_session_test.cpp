@@ -139,20 +139,19 @@ TEST(LiveSession, LeavingWithoutAStreamOnlyReturnsToVideoMode) {
     EXPECT_EQ(link.sent[0].payload, live::video_mode().payload);
 }
 
-TEST(LiveSession, KeepAliveEveryIntervalWhileJoined) {
+TEST(LiveSession, KeepAliveEveryIntervalFromLiveStreamingModeOn) {
     auto link = willing_camera();
     Session session(link);
     const auto start = Session::Clock::now();
-    session.keep_alive(start + std::chrono::seconds(10));  // not joined: nothing
+    session.keep_alive(start + std::chrono::seconds(10));  // idle: nothing
     EXPECT_TRUE(link.sent.empty());
-    session.enter_live_mode();
-    session.join("HomeWiFi", "secret123");
+    session.enter_live_mode();  // waiting for a network choice: the link must live on
     link.sent.clear();
-    const auto joined = Session::Clock::now();
-    session.keep_alive(joined + std::chrono::milliseconds(1000));  // not due yet
+    const auto entered = Session::Clock::now();
+    session.keep_alive(entered + std::chrono::milliseconds(1000));  // not due yet
     EXPECT_TRUE(link.sent.empty());
-    session.keep_alive(joined + live::kKeepAliveInterval);
-    session.keep_alive(joined + live::kKeepAliveInterval + std::chrono::milliseconds(100));  // just sent
+    session.keep_alive(entered + live::kKeepAliveInterval);
+    session.keep_alive(entered + live::kKeepAliveInterval + std::chrono::milliseconds(100));  // just sent
     ASSERT_EQ(link.sent.size(), 1u);
     EXPECT_EQ(link.sent[0].payload, live::keep_alive().payload);
 }

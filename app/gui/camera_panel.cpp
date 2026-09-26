@@ -76,10 +76,12 @@ CameraPanel::CameraPanel(QWidget* parent)
     hint_->setWordWrap(true);
     layout->addWidget(hint_);
 
-    auto* actions = new QHBoxLayout;
+    actions_ = new QWidget(this);
+    auto* actions = new QHBoxLayout(actions_);
+    actions->setContentsMargins(0, 0, 0, 0);
     actions->addWidget(record_);
     actions->addWidget(photo_);
-    layout->addLayout(actions);
+    layout->addWidget(actions_);
     status_->setWordWrap(true);
     status_->setTextFormat(Qt::RichText);  // separators are entities even when no tag is shown
     layout->addWidget(status_);
@@ -93,6 +95,7 @@ CameraPanel::CameraPanel(QWidget* parent)
     };
 
     QFormLayout* shooting = group(tr("Shooting"));
+    shooting_ = shooting->parentWidget();
     addSetting(shooting, Setting::Mode, tr("Mode"));
     shooting->addRow(tr("Resolution"), resolution_);
     shooting->addRow(tr("Frame rate"), frame_rate_);
@@ -335,12 +338,22 @@ void CameraPanel::updateStatus() {
     record_->setText(state_.recording ? tr("Stop recording") : tr("Start recording"));
     record_->setStyleSheet(state_.recording ? QStringLiteral("color: #dc2626; font-weight: bold;") : QString());
     if (!controller_) {
-        hint_->setText(tr("Connect to the camera to change its settings."));
+        hint_->setText(unavailable_.isEmpty() ? tr("Connect to the camera to change its settings.") : unavailable_);
     } else if (!have_state_) {
         hint_->setText(tr("Waiting for the camera's settings..."));
     } else {
         hint_->setText(tr("Changes are made on the camera; a value it does not accept in the current mode snaps back."));
     }
+}
+
+void CameraPanel::setLiveStreaming(bool on) {
+    shooting_->setVisible(!on);
+    actions_->setVisible(!on);
+}
+
+void CameraPanel::setUnavailable(const QString& reason) {
+    unavailable_ = reason;
+    updateStatus();
 }
 
 void CameraPanel::updateEnabled() {

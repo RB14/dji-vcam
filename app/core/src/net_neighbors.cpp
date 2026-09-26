@@ -167,7 +167,8 @@ std::string normalize_mac(std::string_view mac) {
     return out;
 }
 
-std::optional<std::string> find_ip_by_mac(std::string_view mac_text, std::chrono::milliseconds timeout) {
+std::optional<std::string> find_ip_by_mac(std::string_view mac_text, std::chrono::milliseconds timeout,
+                                          std::stop_token stop) {
     const std::string mac = normalize_mac(mac_text);
     if (mac.empty()) {
         return std::nullopt;
@@ -186,7 +187,7 @@ std::optional<std::string> find_ip_by_mac(std::string_view mac_text, std::chrono
             return ip;
         }
         const auto now = std::chrono::steady_clock::now();
-        if (now >= until) {
+        if (now >= until || stop.stop_requested()) {
             return std::nullopt;
         }
         if (socket && now >= next_nudge) {  // makes the OS resolve every address, filling its table

@@ -72,6 +72,12 @@ int main(int argc, char* argv[]) {
                        "virtual camera."),
         QStringLiteral("file"));
     parser.addOption(replay_option);
+    const QCommandLineOption stream_option(
+        QStringLiteral("stream"),
+        QStringLiteral("Play a network stream (e.g. rtsp://127.0.0.1:8554/dji-vcam) as the RTMP feed does, without the "
+                       "camera."),
+        QStringLiteral("url"));
+    parser.addOption(stream_option);
     parser.process(app);
 
     MainWindow window;
@@ -81,6 +87,8 @@ int main(int argc, char* argv[]) {
     window.show();
     if (parser.isSet(replay_option)) {
         window.replayFile(parser.value(replay_option));
+    } else if (parser.isSet(stream_option)) {
+        window.playStream(parser.value(stream_option));
     } else if (parser.isSet(connect_option)) {
         window.connectCamera();
     }

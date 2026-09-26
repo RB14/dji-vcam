@@ -3,42 +3,45 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
+#include <QClipboard>
 #include <QComboBox>
-#include <QDockWidget>
-#include <QScreen>
-#include <QStackedWidget>
-#include <QScrollArea>
-#include <QLabel>
-#include <QMenu>
-#include <QMessageBox>
-#include <QSettings>
-#include <QStatusBar>
-#include <QStringList>
-#include <QTimer>
-#include <QToolBar>
-#include <QSignalBlocker>
-#include <QThread>
-#include <QToolButton>
-
-#include <algorithm>
-#include <cmath>
-#include <iterator>
-
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
+#include <QDockWidget>
 #include <QFileInfo>
+#include <QGridLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QScreen>
+#include <QScrollArea>
+#include <QSettings>
+#include <QSignalBlocker>
+#include <QStackedWidget>
 #include <QStandardPaths>
+#include <QStatusBar>
+#include <QTimer>
+#include <QToolBar>
+#include <QToolButton>
+#include <QVBoxLayout>
 
+#include <algorithm>
 #include <chrono>
 
-#include "bridge_link.h"
 #include "camera_panel.h"
 #include "djivcam/camera_ble.h"
 #include "djivcam/camera_model.h"
-#include "djivcam/wifi_channel.h"
+#include "djivcam/net.h"
+#include "network_dialog.h"
 #include "pipeline.h"
 #include "preview_widget.h"
+#include "rtmp_server.h"
+#include "secret_store.h"
 
 #ifdef DJIVCAM_HAVE_VCAM
 #include "djivcam/virtual_camera.h"
@@ -51,21 +54,40 @@ namespace {
 
 const QString kIdentifierKey = QStringLiteral("camera/identifier");
 const QString kAddressKey = QStringLiteral("camera/address");
-const QString kBluetoothKey = QStringLiteral("connect/wakeOverBluetooth");
-const QString kBridgeKey = QStringLiteral("connect/configureBridge");
-// The camera's Wi-Fi channel: 0 automatic (the quietest the bridge hears), -1 leave it, else 1/6/11.
-const QString kWifiChannelKey = QStringLiteral("connect/wifiChannel");
-const QString kCameraChannelKey = QStringLiteral("camera/wifiChannel");  // last known, 0 unknown
-const QString kCameraSsidKey = QStringLiteral("camera/ssid");
 const QString kStartupKey = QStringLiteral("connect/onStartup");
+const QString kNetworkKey = QStringLiteral("network/ssid");               // the network the camera joins
+const QString kNetworkPasswordKey = QStringLiteral("network/password");   // secret::protect()ed
+const QString kFeedKey = QStringLiteral("video/feed");                    // "lowLatency" or "rtmp"
+const QString kRtmpResolutionKey = QStringLiteral("rtmp/resolution");     // 1080 or 720
 const QString kDecoderKey = QStringLiteral("video/decoder");
 const QString kVirtualCameraKey = QStringLiteral("vcam/enabled");
 const QString kHoldOnLossKey = QStringLiteral("video/holdOnLoss");
-// Advanced, no UI: the camera's address (its own access point: 192.168.2.1; 127.0.0.1 for
-// tools/fake_camera.py).
+// Advanced, no UI: play the live view straight from this address, without Bluetooth (a camera
+// already on the network, or tools/fake_camera.py at 127.0.0.1).
 const QString kCameraIpKey = QStringLiteral("connect/cameraIp");
 const QString kPairingToken = QStringLiteral("obsd");  // shown on the camera's approval prompt
-constexpr qint64 kRewakeAfterMs = 10000;                // camera network gone this long: wake again
+constexpr auto kFindCameraTimeout = std::chrono::seconds(20);
+
+// The RTMP feed's choices (DJI Mimo offers these bitrates).
+struct RtmpQuality {
+    int resolution;
+    const char* label;
+    djivcam::live::Resolution code;
+    std::uint16_t kbps;
+};
+constexpr RtmpQuality kRtmpQualities[] = {
+    {1080, QT_TRANSLATE_NOOP("MainWindow", "1080p, 6 Mbit/s"), djivcam::live::Resolution::P1080, 6000},
+    {720, QT_TRANSLATE_NOOP("MainWindow", "720p, 4 Mbit/s"), djivcam::live::Resolution::P720, 4000},
+};
+
+const RtmpQuality& rtmp_quality(int resolution) {
+    for (const RtmpQuality& quality : kRtmpQualities) {
+        if (quality.resolution == resolution) {
+            return quality;
+        }
+    }
+    return kRtmpQualities[0];
+}
 
 QAction* add_toggle(QMenu* menu, const QString& text, QSettings* settings, const QString& key, bool fallback) {
     QAction* action = menu->addAction(text);
@@ -82,20 +104,22 @@ MainWindow::MainWindow(QWidget* parent)
       settings_(new QSettings(this)),
       pipeline_(new Pipeline(this)),
       connector_(new CameraConnector(this)),
+      rtmp_(RtmpServer::create(this)),
       preview_(new PreviewWidget(this)),
       view_(new QStackedWidget(this)),
       status_view_(new QLabel(this)),
       camera_panel_(new CameraPanel(this)),
       connect_action_(new QAction(tr("Connect"), this)),
+      feed_choice_(new QComboBox(this)),
       decoder_choice_(new QComboBox(this)),
       camera_label_(new QLabel(this)),
       state_label_(new QLabel(tr("Not connected: click Connect"), this)),
       format_label_(new QLabel(this)),
+      network_label_(new QLabel(this)),
       stats_label_(new QLabel(this)),
       decoder_label_(new QLabel(this)) {
     vcam_action_ = new QAction(tr("Virtual camera"), this);
     vcam_label_ = new QLabel(this);
-    wifi_label_ = new QLabel(this);
     setWindowTitle(tr("DJI VCam - DJI Osmo Action live view"));
     status_view_->setAlignment(Qt::AlignCenter);
     status_view_->setWordWrap(true);
@@ -120,6 +144,18 @@ MainWindow::MainWindow(QWidget* parent)
     camera_scroll->setMinimumWidth(300);
     camera_dock->setWidget(camera_scroll);
     addDockWidget(Qt::RightDockWidgetArea, camera_dock);
+    camera_panel_->setLiveStreaming(true);  // the camera is in Live Streaming mode on the network
+
+    feed_choice_->addItem(tr("Feed: low latency"), int(Feed::LowLatency));
+    feed_choice_->addItem(tr("Feed: RTMP"), int(Feed::Rtmp));
+    feed_choice_->setToolTip(tr("Low latency: the camera's live view, about 0.15 s behind, 1080p.\n"
+                                "RTMP: the camera's RTMP stream through this computer, about 0.4 s behind, "
+                                "and its address for other apps (Options → Stream addresses)."));
+    feed_choice_->setCurrentIndex(settings_->value(kFeedKey).toString() == QLatin1String("rtmp") ? 1 : 0);
+    connect(feed_choice_, &QComboBox::currentIndexChanged, this, [this] {
+        settings_->setValue(kFeedKey, feed() == Feed::Rtmp ? QStringLiteral("rtmp") : QStringLiteral("lowLatency"));
+        onFeedChosen();
+    });
 
     decoder_choice_->addItem(tr("Decoder: auto (GPU if available)"), int(DecoderPreference::Auto));
     decoder_choice_->addItem(tr("Decoder: GPU"), int(DecoderPreference::Hardware));
@@ -129,30 +165,29 @@ MainWindow::MainWindow(QWidget* parent)
             [this] { settings_->setValue(kDecoderKey, decoder_choice_->currentData()); });
 
     auto* options = new QMenu(tr("Options"), this);
-    bluetooth_action_ = add_toggle(options, tr("Wake the camera over Bluetooth"), settings_, kBluetoothKey, true);
-    bridge_action_ = add_toggle(options, tr("Configure the ESP32 USB bridge automatically"), settings_, kBridgeKey, true);
     startup_action_ = add_toggle(options, tr("Connect on startup"), settings_, kStartupKey, false);
     QAction* hold_action = add_toggle(options, tr("Freeze the picture after lost video (instead of showing damaged frames)"),
                                       settings_, kHoldOnLossKey, false);  // real time first
     pipeline_->setHoldOnLoss(hold_action->isChecked());
     connect(hold_action, &QAction::toggled, this, [this](bool on) { pipeline_->setHoldOnLoss(on); });
-    QMenu* channel_menu = options->addMenu(tr("Camera Wi-Fi channel"));
-    auto* channels = new QActionGroup(channel_menu);
-    const int channel_choice = settings_->value(kWifiChannelKey, 0).toInt();
-    for (const auto& [value, text] : {std::pair{0, tr("Automatic: the quietest the bridge hears")}, std::pair{1, tr("Channel 1")},
-                                      std::pair{6, tr("Channel 6")}, std::pair{11, tr("Channel 11")},
-                                      std::pair{-1, tr("Leave it as the camera has it")}}) {
-        QAction* action = channel_menu->addAction(text);
+    options->addSeparator();
+    connect(options->addAction(tr("Camera Wi-Fi network...")), &QAction::triggered, this, [this] { askNetwork({}); });
+    QMenu* quality_menu = options->addMenu(tr("RTMP quality"));
+    auto* qualities = new QActionGroup(quality_menu);
+    const int chosen_resolution = rtmp_quality(settings_->value(kRtmpResolutionKey, 1080).toInt()).resolution;
+    for (const RtmpQuality& quality : kRtmpQualities) {
+        QAction* action = quality_menu->addAction(tr(quality.label));
         action->setCheckable(true);
-        action->setChecked(value == channel_choice);
-        channels->addAction(action);
-        connect(action, &QAction::triggered, this, [this, value] {
-            settings_->setValue(kWifiChannelKey, value);
-            channel_scanned_ = false;  // a new automatic choice may scan again
-            showWifiChannel();
-            statusBar()->showMessage(tr("The camera's Wi-Fi channel changes at the next Connect"), 6000);
+        action->setChecked(quality.resolution == chosen_resolution);
+        qualities->addAction(action);
+        connect(action, &QAction::triggered, this, [this, resolution = quality.resolution] {
+            settings_->setValue(kRtmpResolutionKey, resolution);
+            if (rtmp_requested_) {
+                onFeedChosen();  // the camera rejoins and pushes again with the new settings
+            }
         });
     }
+    connect(options->addAction(tr("Stream addresses...")), &QAction::triggered, this, &MainWindow::showStreamAddresses);
     options->addSeparator();
     connect(options->addAction(tr("Forget the paired camera")), &QAction::triggered, this, &MainWindow::forgetCamera);
     options->addSeparator();
@@ -167,6 +202,7 @@ MainWindow::MainWindow(QWidget* parent)
     toolbar->setMovable(false);
     toolbar->addAction(connect_action_);
     toolbar->addSeparator();
+    toolbar->addWidget(feed_choice_);
     toolbar->addWidget(decoder_choice_);
     toolbar->addWidget(options_button);
     toolbar->addSeparator();
@@ -185,7 +221,7 @@ MainWindow::MainWindow(QWidget* parent)
     statusBar()->addWidget(state_label_, 1);
     statusBar()->addPermanentWidget(vcam_label_);
     statusBar()->addPermanentWidget(format_label_);
-    statusBar()->addPermanentWidget(wifi_label_);
+    statusBar()->addPermanentWidget(network_label_);
     statusBar()->addPermanentWidget(stats_label_);
     statusBar()->addPermanentWidget(decoder_label_);
 
@@ -216,10 +252,15 @@ MainWindow::MainWindow(QWidget* parent)
         connect_action_->setChecked(false);
     });
     connect(connector_, &CameraConnector::stageChanged, this, &MainWindow::onConnectorStage);
-    connect(connector_, &CameraConnector::wifiReady, this, &MainWindow::onWifiReady);
-    connect(connector_, &CameraConnector::wifiChannelChanged, this, [this](int channel) {
-        setKnownWifiChannel(channel);
-        statusBar()->showMessage(tr("The camera's Wi-Fi moved to channel %1").arg(channel), 8000);
+    connect(connector_, &CameraConnector::networksFound, this, &MainWindow::onNetworksFound);
+    connect(connector_, &CameraConnector::joinFailed, this, &MainWindow::onJoinFailed);
+    connect(connector_, &CameraConnector::joined, this, &MainWindow::onJoined);
+    connect(connector_, &CameraConnector::linkLost, this, &MainWindow::onLinkLost);
+    connect(connector_, &CameraConnector::streamStarted, this, [this](bool ok) {
+        qInfo("rtmp: the camera %s", ok ? "pushes its RTMP stream" : "refused the RTMP stream");
+        if (!ok) {
+            showStage(tr("The camera refused to start its RTMP stream: try the low-latency feed"), true);
+        }
     });
     connect(connector_, &CameraConnector::cameraFound, this, [this](const QString& name, const QString& address, int model) {
         const auto id = static_cast<std::uint8_t>(model);
@@ -235,6 +276,19 @@ MainWindow::MainWindow(QWidget* parent)
         }
         settings_->setValue(kAddressKey, address);
     });
+    if (rtmp_) {
+        connect(rtmp_, &RtmpServer::publisherChanged, this, [this](const QString& from) {
+            statusBar()->showMessage(from.isEmpty() ? tr("The camera's RTMP stream stopped")
+                                                    : tr("The camera pushes its RTMP stream from %1").arg(from),
+                                     6000);
+        });
+        connect(rtmp_, &RtmpServer::failed, this, [this](const QString& message) {
+            qInfo("rtmp: %s", qPrintable(message));
+            if (feed() == Feed::Rtmp && connect_action_->isChecked()) {
+                showStage(message, true);
+            }
+        });
+    }
 
 #ifdef DJIVCAM_HAVE_VCAM
     virtual_camera_ = new djivcam::vcam::VirtualCamera();
@@ -251,12 +305,25 @@ MainWindow::MainWindow(QWidget* parent)
     vcam_action_->setToolTip(tr("The virtual camera is not available on this platform yet"));
 #endif
     updateVirtualCameraStatus();
-    showWifiChannel();
+    updateNetworkLabel();
     showStage(state_label_->text());
 
     if (startup_action_->isChecked()) {
         QTimer::singleShot(0, this, &MainWindow::connectCamera);
     }
+}
+
+MainWindow::~MainWindow() {
+    finder_ = {};  // stops a lookup still running
+    connector_->stop();
+    camera_panel_->setController(nullptr);  // the controller goes away with the pipeline's session
+    pipeline_->stop();
+    if (rtmp_) {
+        rtmp_->stop();
+    }
+#ifdef DJIVCAM_HAVE_VCAM
+    delete virtual_camera_;
+#endif
 }
 
 void MainWindow::enableVirtualCamera(bool on) {
@@ -334,19 +401,6 @@ void MainWindow::updateVirtualCameraStatus() {
 #endif
 }
 
-MainWindow::~MainWindow() {
-    if (channel_scan_) {
-        channel_scan_->wait();  // it posts its result to this window
-        delete channel_scan_;
-    }
-    connector_->stop();
-    camera_panel_->setController(nullptr);  // the controller goes away with the pipeline's session
-    pipeline_->stop();
-#ifdef DJIVCAM_HAVE_VCAM
-    delete virtual_camera_;
-#endif
-}
-
 void MainWindow::connectCamera() { connect_action_->setChecked(true); }
 
 void MainWindow::showAbout() {
@@ -365,6 +419,12 @@ void MainWindow::replayFile(const QString& path) {
     connectCamera();
 }
 
+void MainWindow::playStream(const QString& url) {
+    stream_url_ = url;
+    camera_label_->setText(tr("Stream: %1").arg(url));
+    connectCamera();
+}
+
 void MainWindow::importPairingIdentifier(const QString& identifier) { settings_->setValue(kIdentifierKey, identifier); }
 
 QString MainWindow::pairingIdentifier() {
@@ -376,12 +436,13 @@ QString MainWindow::pairingIdentifier() {
     return identifier;
 }
 
+QString MainWindow::networkPassword() const { return secret::unprotect(settings_->value(kNetworkPasswordKey).toByteArray()); }
+
+MainWindow::Feed MainWindow::feed() const { return static_cast<Feed>(feed_choice_->currentData().toInt()); }
+
 void MainWindow::forgetCamera() {
     settings_->remove(kIdentifierKey);
     settings_->remove(kAddressKey);
-    settings_->remove(kCameraSsidKey);  // another camera has its own network and channel
-    setKnownWifiChannel(0);
-    channel_scanned_ = false;
     camera_label_->clear();
     QMessageBox::information(this, tr("Camera forgotten"),
                              tr("The next connection pairs again; approve the request on the camera screen."));
@@ -392,14 +453,18 @@ void MainWindow::toggleConnection(bool connect) {
     connect_action_->setText(connect ? tr("Disconnect") : tr("Connect"));
     decoder_choice_->setEnabled(!connect);
     if (!connect) {
-        connector_->stop();
-        camera_panel_->setController(nullptr);
-        pipeline_->stop();
+        finder_ = {};
+        connector_->stop();  // back to Video mode: the camera returns to its own access point
+        stopFeed();
+        if (rtmp_) {
+            rtmp_->stop();
+        }
+        joined_ssid_.clear();
+        camera_ip_.clear();
+        rtmp_requested_ = false;
+        updateNetworkLabel();
         showStatusView();
-        streaming_ = false;
         showStage(tr("Not connected: click Connect"));
-        format_label_->clear();
-        stats_label_->clear();
         decoder_label_->clear();
         decoder_label_->setToolTip({});
         return;
@@ -410,27 +475,23 @@ void MainWindow::toggleConnection(bool connect) {
         pipeline_->startReplay(replay_file_, decoder);
         return;
     }
-    // The session waits for the camera network by itself; Bluetooth (if enabled) brings it up.
-    djivcam::SessionConfig config;
-    config.identifier = pairingIdentifier().toStdString();
-    config.token = kPairingToken.toStdString();
-    // With Bluetooth the datalink waits until the Bluetooth session has woken the camera and hung up.
-    config.connect_allowed = !(bluetooth_action_->isChecked() && CameraConnector::bluetoothAvailable());
-    const QString camera_ip = settings_->value(kCameraIpKey, QString::fromStdString(config.camera_ip)).toString();
-    config.camera_ip = camera_ip.toStdString();
-    config.camera_subnet_prefix = camera_ip.left(camera_ip.lastIndexOf(QLatin1Char('.')) + 1).toStdString();
-    network_missing_.invalidate();
-    camera_panel_->setController(nullptr);
-    pipeline_->start(config, decoder);
-    camera_panel_->setController(pipeline_->camera());
-    if (bluetooth_action_->isChecked()) {
-        if (CameraConnector::bluetoothAvailable()) {
-            chooseWifiChannel();
-            connector_->start(pairingIdentifier(), kPairingToken, settings_->value(kAddressKey).toString());
-        } else {
-            showStage(tr("Bluetooth is off or missing: join the camera's Wi-Fi another way"), true);
-        }
+    if (!stream_url_.isEmpty()) {
+        camera_panel_->setController(nullptr);
+        pipeline_->startStream(stream_url_, decoder);
+        return;
     }
+    showStatusView();
+    if (const QString direct = settings_->value(kCameraIpKey).toString(); !direct.isEmpty()) {
+        camera_ip_ = direct;  // advanced: the camera is already reachable there
+        startLowLatency();
+        return;
+    }
+    if (!CameraConnector::bluetoothAvailable()) {
+        showStage(tr("Bluetooth is off or missing: DJI VCam needs it to put the camera on your Wi-Fi"), true);
+        return;
+    }
+    connector_->start(pairingIdentifier(), kPairingToken, settings_->value(kAddressKey).toString(),
+                      settings_->value(kNetworkKey).toString(), networkPassword());
 }
 
 void MainWindow::showStage(const QString& text, bool attention) {
@@ -451,100 +512,242 @@ void MainWindow::showStatusView() {
     view_->setCurrentWidget(status_view_);
 }
 
+void MainWindow::updateNetworkLabel() {
+    const QString network = joined_ssid_.isEmpty() ? settings_->value(kNetworkKey).toString() : joined_ssid_;
+    QString text;
+    if (!network.isEmpty()) {
+        text = camera_ip_.isEmpty() ? tr("Wi-Fi: %1").arg(network) : tr("Wi-Fi: %1 · %2").arg(network, camera_ip_);
+    }
+    network_label_->setText(text);
+    network_label_->setToolTip(tr("The Wi-Fi network the camera joins, and its address there "
+                                  "(Options → Camera Wi-Fi network)"));
+}
+
 void MainWindow::onConnectorStage(Stage stage, const QString& detail) {
     qInfo("bluetooth: %s", qPrintable(detail));
-    connector_stage_ = stage;
-    // No datalink connection may start while a Bluetooth session is open (it would lose its video).
-    if (stage == Stage::Pairing || stage == Stage::ApprovalNeeded || stage == Stage::WakingWifi) {
-        pipeline_->setConnectAllowed(false);
-    } else if (stage == Stage::WifiReady) {
-        pipeline_->setConnectAllowed(true);
-    }
-    // Bluetooth stages matter until the camera's Wi-Fi is up; after that the session speaks.
-    if (!streaming_ && stage != Stage::Idle && stage != Stage::WifiReady) {
-        showStage(detail, stage == Stage::ApprovalNeeded || stage == Stage::Failed);
+    if (!streaming_ && stage != Stage::Idle) {
+        showStage(detail, stage == Stage::ApprovalNeeded || stage == Stage::Failed || stage == Stage::NeedNetwork);
     }
 }
 
-void MainWindow::chooseWifiChannel() {
-    const int choice = settings_->value(kWifiChannelKey, 0).toInt();
-    const int known = settings_->value(kCameraChannelKey, 0).toInt();
-    if (choice > 0) {
-        if (choice != known) {
-            qInfo("wifi channel: moving the camera to channel %d (last known %d)", choice, known);
-            connector_->setWifiChannel(choice);
+void MainWindow::askNetwork(const QString& error) {
+    if (!network_dialog_) {
+        network_dialog_ = new NetworkDialog(settings_->value(kNetworkKey).toString(), networkPassword(), this);
+        network_dialog_->setAttribute(Qt::WA_DeleteOnClose);
+        connect(network_dialog_, &NetworkDialog::rescanRequested, connector_, &CameraConnector::rescan);
+        connect(network_dialog_, &QDialog::accepted, this, [this] {
+            const QString ssid = network_dialog_->ssid();
+            const QString password = network_dialog_->password();
+            settings_->setValue(kNetworkKey, ssid);
+            settings_->setValue(kNetworkPasswordKey, secret::protect(password));
+            updateNetworkLabel();
+            if (connect_action_->isChecked() && ssid != joined_ssid_) {
+                stopFeed();
+                joined_ssid_.clear();
+                camera_ip_.clear();
+                rtmp_requested_ = false;
+                connector_->setNetwork(ssid, password);  // joins, or leaves the current network for it
+            }
+        });
+        connect(network_dialog_, &QDialog::rejected, this, [this] {
+            if (connect_action_->isChecked() && joined_ssid_.isEmpty()) {
+                connect_action_->setChecked(false);  // the camera waits for a network: give up
+            }
+        });
+        if (!connect_action_->isChecked()) {
+            network_dialog_->setOffline();
         }
-        return;
     }
-    if (choice < 0 || channel_scanned_ || !bridge_action_->isChecked()) {
-        return;
-    }
-    channel_scanned_ = true;
-    const std::string ssid = settings_->value(kCameraSsidKey).toString().toStdString();
-    // Meanwhile the connector searches and pairs; the result usually arrives before its wake. A
-    // QThread: the serial port needs one.
-    delete channel_scan_;
-    channel_scan_ = QThread::create([this, ssid, known] {
-        QString error;
-        const auto networks = BridgeLink::scan(&error);
-        QMetaObject::invokeMethod(this, [this, networks, error, ssid, known] {
-            if (!networks) {
-                qInfo("wifi channel: no scan (%s)", qPrintable(error));
-                return;
-            }
-            int current = known;
-            for (const auto& network : *networks) {
-                if (!ssid.empty() && network.ssid == ssid) {
-                    current = network.channel;  // the camera's access point is up: its actual channel
-                }
-            }
-            if (current != known) {
-                setKnownWifiChannel(current);
-            }
-            const int best = djivcam::wifi::quietest_channel(*networks, ssid, current);
-            // Each channel's interference as one equivalent signal level, to check the choice.
-            std::vector<djivcam::wifi::Network> others;
-            std::copy_if(networks->begin(), networks->end(), std::back_inserter(others),
-                         [&ssid](const auto& network) { return network.ssid != ssid; });
-            QStringList levels;
-            for (int channel : {1, 6, 11}) {
-                const double power = djivcam::wifi::interference(others, channel);
-                levels << (power > 0 ? QStringLiteral("%1: %2 dBm").arg(channel).arg(10 * std::log10(power), 0, 'f', 0)
-                                     : QStringLiteral("%1: none").arg(channel));
-            }
-            qInfo("wifi channel: %d networks heard (%s), the camera on %d: %s", static_cast<int>(networks->size()),
-                  qPrintable(levels.join(QStringLiteral(", "))), current,
-                  best ? qPrintable(QStringLiteral("moving it to %1").arg(best)) : "staying");
-            if (best) {
-                connector_->setWifiChannel(best);
-            }
-        }, Qt::QueuedConnection);
-    });
-    channel_scan_->start();
+    network_dialog_->setError(error);
+    network_dialog_->show();
+    network_dialog_->raise();
+    network_dialog_->activateWindow();
 }
 
-void MainWindow::onWifiReady(const QString& ssid, const QString& password) {
-    settings_->setValue(kCameraSsidKey, ssid);
-    if (streaming_) {
-        return;  // a Bluetooth reconnect while video flows: the network and the bridge are fine
+void MainWindow::onNetworksFound(const QList<CameraNetwork>& networks) {
+    qInfo("bluetooth: the camera hears %lld networks", static_cast<long long>(networks.size()));
+    if (!network_dialog_ && joined_ssid_.isEmpty()) {
+        askNetwork({});  // no network chosen yet: the connector scanned to ask for one
     }
-    if (channel_scan_) {
-        channel_scan_->wait();  // it holds the bridge's console
+    if (network_dialog_) {
+        network_dialog_->setNetworks(networks);
     }
-    // From now on the camera's network should appear: if it does not within kRewakeAfterMs, the
-    // camera is woken again (checked in onStats()).
-    network_missing_.start();
-    if (!bridge_action_->isChecked()) {
-        showStage(tr("Waiting for the camera's Wi-Fi (%1)").arg(ssid));
+}
+
+void MainWindow::onJoinFailed(const QString& ssid) {
+    qInfo("bluetooth: the camera could not join %s", qPrintable(ssid));
+    showStage(tr("The camera could not join %1").arg(ssid), true);
+    askNetwork(tr("The camera could not join %1. Check the password, and that the camera can reach this "
+                  "network (2.4 GHz, unless the camera's Wi-Fi band is set to 5 GHz).")
+                   .arg(ssid));
+    connector_->rescan();
+}
+
+void MainWindow::onJoined(const QString& ssid, const QString& mac) {
+    joined_ssid_ = ssid;
+    camera_mac_ = mac;
+    camera_ip_.clear();
+    rtmp_requested_ = false;
+    updateNetworkLabel();
+    if (network_dialog_) {
+        network_dialog_->close();
+    }
+    showStage(tr("The camera is on %1: looking for it there").arg(ssid));
+    finder_ = std::jthread([this, mac = mac.toStdString()](std::stop_token stop) {
+        const auto ip = djivcam::net::find_ip_by_mac(mac, kFindCameraTimeout, stop);
+        if (!stop.stop_requested()) {
+            QMetaObject::invokeMethod(this, [this, ip = QString::fromStdString(ip.value_or(std::string()))] { onCameraAddress(ip); },
+                                      Qt::QueuedConnection);
+        }
+    });
+}
+
+void MainWindow::onCameraAddress(const QString& ip) {
+    if (joined_ssid_.isEmpty() || !connect_action_->isChecked()) {
+        return;  // meanwhile disconnected or the link was lost
+    }
+    if (ip.isEmpty()) {
+        qInfo("network: camera %s not found on this computer's networks", qPrintable(camera_mac_));
+        showStage(tr("The camera is on %1, but this computer does not see it there. Is this computer on the same "
+                     "network (and not a guest network that keeps its devices apart)?")
+                      .arg(joined_ssid_),
+                  true);
         return;
     }
-    showStage(tr("Configuring the ESP32 bridge"));
+    qInfo("network: the camera is at %s", qPrintable(ip));
+    camera_ip_ = ip;
+    updateNetworkLabel();
+    startFeed();
+}
+
+void MainWindow::onLinkLost() {
+    finder_ = {};
+    stopFeed();
+    joined_ssid_.clear();
+    camera_ip_.clear();
+    rtmp_requested_ = false;
+    updateNetworkLabel();
+    showStatusView();
+}
+
+void MainWindow::startFeed() {
+    if (feed() == Feed::Rtmp) {
+        startRtmp();
+    } else {
+        startLowLatency();
+    }
+}
+
+void MainWindow::startLowLatency() {
+    djivcam::SessionConfig config;
+    config.identifier = pairingIdentifier().toStdString();
+    config.token = kPairingToken.toStdString();
+    config.camera_ip = camera_ip_.toStdString();
+    config.camera_subnet_prefix = camera_ip_.left(camera_ip_.lastIndexOf(QLatin1Char('.')) + 1).toStdString();
+    camera_panel_->setController(nullptr);
+    camera_panel_->setUnavailable({});
+    pipeline_->start(config, static_cast<DecoderPreference>(decoder_choice_->currentData().toInt()));
+    camera_panel_->setController(pipeline_->camera());
+}
+
+void MainWindow::startRtmp() {
+    if (!rtmp_) {
+        showStage(tr("The RTMP feed needs go2rtc.exe next to DJI VCam: reinstall the app, or use the low-latency feed"), true);
+        return;
+    }
     QString error;
-    if (!BridgeLink::ensureCredentials(ssid, password, &error)) {
-        showStage(tr("%1: join the camera's Wi-Fi another way").arg(error), true);
+    if (!rtmp_->start(&error)) {
+        showStage(tr("The RTMP server did not start: %1").arg(error), true);
         return;
     }
-    showStage(tr("Waiting for the camera's Wi-Fi (the bridge is joining %1)").arg(ssid));
+    // The camera reaches this computer at its address on the camera's network.
+    const auto host = djivcam::net::local_ip_towards(camera_ip_.toStdString(), RtmpServer::kRtmpPort);
+    if (!host) {
+        showStage(tr("This computer has no address on the camera's network"), true);
+        return;
+    }
+    camera_panel_->setController(nullptr);
+    camera_panel_->setUnavailable(tr("The camera's settings are changed on the low-latency feed for now."));
+    if (!rtmp_requested_) {
+        const RtmpQuality& quality = rtmp_quality(settings_->value(kRtmpResolutionKey, 1080).toInt());
+        const QString url = rtmp_->ingestUrl(QString::fromStdString(*host));
+        qInfo("rtmp: asking the camera to push %dp at %u kbit/s to %s", quality.resolution, quality.kbps, qPrintable(url));
+        connector_->startStream({quality.code, quality.kbps, url.toStdString()});
+        rtmp_requested_ = true;
+    }
+    showStage(tr("Starting the camera's RTMP stream"));
+    pipeline_->startStream(rtmp_->playbackUrl(), static_cast<DecoderPreference>(decoder_choice_->currentData().toInt()));
+}
+
+void MainWindow::stopFeed() {
+    camera_panel_->setController(nullptr);
+    pipeline_->stop();
+    streaming_ = false;
+    format_label_->clear();
+    stats_label_->clear();
+}
+
+void MainWindow::onFeedChosen() {
+    if (!connect_action_->isChecked() || joined_ssid_.isEmpty() || camera_ip_.isEmpty()) {
+        return;  // the choice applies once the camera is on the network
+    }
+    stopFeed();
+    showStatusView();
+    if (rtmp_requested_) {
+        // Only leaving the network ends the camera's push: it rejoins, then the chosen feed starts.
+        qInfo("rtmp: the camera rejoins %s without its push", qPrintable(joined_ssid_));
+        const QString ssid = joined_ssid_;
+        joined_ssid_.clear();
+        camera_ip_.clear();
+        rtmp_requested_ = false;
+        if (rtmp_) {
+            rtmp_->stop();
+        }
+        connector_->setNetwork(ssid, networkPassword());
+        return;
+    }
+    startFeed();
+}
+
+void MainWindow::showStreamAddresses() {
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Stream addresses"));
+    auto* layout = new QVBoxLayout(&dialog);
+    if (!rtmp_) {
+        layout->addWidget(new QLabel(tr("This copy of DJI VCam has no RTMP server (go2rtc.exe)."), &dialog));
+    } else {
+        const auto host = camera_ip_.isEmpty() ? std::nullopt
+                                               : djivcam::net::local_ip_towards(camera_ip_.toStdString(), RtmpServer::kRtmpPort);
+        auto* intro = new QLabel(tr("With the RTMP feed (Feed: RTMP), the camera pushes its stream to this computer, "
+                                    "and other apps can open it too."),
+                                 &dialog);
+        intro->setWordWrap(true);
+        layout->addWidget(intro);
+        auto* grid = new QGridLayout;
+        int row = 0;
+        auto add = [&](const QString& label, const QString& url) {
+            auto* field = new QLineEdit(url, &dialog);
+            field->setReadOnly(true);
+            field->setMinimumWidth(360);
+            auto* copy = new QPushButton(tr("Copy"), &dialog);
+            QObject::connect(copy, &QPushButton::clicked, &dialog, [url] { QGuiApplication::clipboard()->setText(url); });
+            grid->addWidget(new QLabel(label, &dialog), row, 0);
+            grid->addWidget(field, row, 1);
+            grid->addWidget(copy, row, 2);
+            ++row;
+        };
+        add(tr("The camera pushes to"), host ? rtmp_->ingestUrl(QString::fromStdString(*host))
+                                             : rtmp_->ingestUrl(tr("<this computer>")));
+        const QStringList shared = rtmp_->shareUrls();
+        for (const QString& url : shared) {
+            add(tr("Other apps (OBS, VLC)"), url);
+        }
+        layout->addLayout(grid);
+    }
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    dialog.exec();
 }
 
 void MainWindow::onSessionState(const QString& state, const QString& detail) {
@@ -554,31 +757,19 @@ void MainWindow::onSessionState(const QString& state, const QString& detail) {
     if (was_streaming && !streaming_) {
         showStatusView();  // no frozen picture: show what the app is doing instead
     }
+    const QString suffix = detail.isEmpty() ? QString() : " (" + detail + ")";
     if (state == QLatin1String("waiting for camera network")) {
-        if (!network_missing_.isValid()) {
-            network_missing_.start();  // checked every second in onStats()
-        }
-        if (connector_stage_ != Stage::Idle && connector_stage_ != Stage::WifiReady) {
-            return;  // a Bluetooth stage is more informative right now
-        }
-        showStage(tr("Waiting for the camera network%1").arg(detail.isEmpty() ? QString() : " (" + detail + ")"));
-        return;
-    }
-    network_missing_.invalidate();
-    if (state == QLatin1String("connecting")) {
-        showStage(tr("Connecting to the camera%1").arg(detail.isEmpty() ? QString() : " (" + detail + ")"));
+        showStage(tr("Waiting for the camera on the network%1").arg(suffix));
+    } else if (state == QLatin1String("waiting for the RTMP feed")) {
+        showStage(tr("Waiting for the camera's RTMP stream%1").arg(suffix));
+    } else if (state == QLatin1String("connecting")) {
+        showStage(tr("Connecting to the camera%1").arg(suffix));
     } else if (streaming_) {
         showStage(detail.isEmpty() ? tr("Streaming") : tr("Streaming (%1)").arg(detail));
     }
 }
 
 void MainWindow::onStats(const LiveStats& stats) {
-    if (!streaming_ && network_missing_.isValid() && network_missing_.elapsed() > kRewakeAfterMs &&
-        connector_stage_ == Stage::WifiReady) {
-        qInfo("camera network missing for %lld ms: waking the camera again", network_missing_.elapsed());
-        connector_->wakeAgain();  // the camera's access point went away
-        network_missing_.restart();
-    }
     if (streaming_ && ++stats_seconds_ % 10 == 0) {
         qInfo("stats: %.0f fps, %.0f kbit/s, delay %.0f ms, loss %.2f%%, %.0f held, %llu reconnects", stats.fps, stats.kbps,
               stats.delay_ms, stats.loss_percent, stats.held, static_cast<unsigned long long>(stats.reconnects));
@@ -604,22 +795,4 @@ void MainWindow::onDecoder(const QString& backend, const QString& gpu, bool hard
     }
     decoder_label_->setText(tr("decoder: GPU (%1)").arg(gpu.isEmpty() ? backend : gpu));
     decoder_label_->setToolTip(tr("Hardware decoding with FFmpeg's %1").arg(backend));
-}
-
-void MainWindow::setKnownWifiChannel(int channel) {
-    if (channel > 0) {
-        settings_->setValue(kCameraChannelKey, channel);
-    } else {
-        settings_->remove(kCameraChannelKey);
-    }
-    showWifiChannel();
-}
-
-void MainWindow::showWifiChannel() {
-    // A setting the camera keeps: shown also while disconnected.
-    const int channel = settings_->value(kCameraChannelKey, 0).toInt();
-    const int choice = settings_->value(kWifiChannelKey, 0).toInt();
-    wifi_label_->setText(channel > 0 ? tr("Wi-Fi: ch %1").arg(channel) : QString());
-    const QString mode = choice == 0 ? tr("automatic") : choice < 0 ? tr("left as the camera has it") : tr("channel %1").arg(choice);
-    wifi_label_->setToolTip(tr("The camera's 2.4 GHz Wi-Fi channel as last heard or set (Options → Camera Wi-Fi channel: %1)").arg(mode));
 }

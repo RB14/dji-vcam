@@ -6,6 +6,8 @@
 #include <exception>
 #include <optional>
 
+#include "djivcam/network_stream.h"
+
 #ifdef DJIVCAM_HAVE_VCAM
 #include "djivcam/vcam_protocol.h"
 #include "djivcam/virtual_camera.h"
@@ -19,6 +21,7 @@ namespace {
 constexpr std::size_t kMaxQueuedUnits = 120;
 constexpr int kMessagesToLog = 40;  // camera messages logged per connection before its first video
 constexpr std::chrono::microseconds kReplayFrameInterval{33'333};  // the live view's 30 fps
+constexpr std::chrono::seconds kStreamRetry{1};  // the RTMP feed is not there (yet): try again
 
 // Raises `maximum` to `value` if it is larger (lock-free, from any thread).
 void raise_to(std::atomic<std::int64_t>& maximum, std::int64_t value) {
@@ -103,6 +106,38 @@ void Pipeline::startReplay(const QString& path, djivcam::media::DecoderPreferenc
     emit stateChanged(QStringLiteral("streaming"), tr("replay of %1").arg(QFileInfo(path).fileName()));
 }
 
+void Pipeline::startStream(const QString& url, djivcam::media::DecoderPreference decoder) {
+    stop();
+    start_decoder(decoder);
+    stream_ = std::jthread([this, target = url.toStdString()](std::stop_token stop) { stream_loop(stop, target); });
+}
+
+void Pipeline::stream_loop(std::stop_token stop, const std::string& url) {
+    std::mutex sleep_mutex;
+    std::condition_variable_any sleeper;
+    while (!stop.stop_requested()) {
+        emit stateChanged(QStringLiteral("connecting"), tr("RTMP feed"));
+        bool streaming = false;
+        const std::string ended = djivcam::media::NetworkStream::run(
+            url,
+            [&](djivcam::h264::AccessUnit&& unit) {
+                if (!streaming) {
+                    streaming = true;
+                    emit stateChanged(QStringLiteral("streaming"), tr("RTMP feed"));
+                }
+                enqueue(std::move(unit));
+            },
+            stop);
+        if (stop.stop_requested()) {
+            return;
+        }
+        holding_ = true;  // the stream restarts mid-GOP: wait for a keyframe
+        emit stateChanged(QStringLiteral("waiting for the RTMP feed"), QString::fromStdString(ended));
+        std::unique_lock lock(sleep_mutex);
+        sleeper.wait_for(lock, stop, kStreamRetry, [] { return false; });
+    }
+}
+
 void Pipeline::start_decoder(djivcam::media::DecoderPreference decoder) {
     assembler_ = std::make_unique<djivcam::h264::AccessUnitAssembler>(
         [this](djivcam::h264::AccessUnit&& unit) { enqueue(std::move(unit)); });
@@ -132,6 +167,10 @@ void Pipeline::stop() {
     if (replay_.joinable()) {
         replay_.request_stop();
         replay_.join();
+    }
+    if (stream_.joinable()) {
+        stream_.request_stop();  // also interrupts a blocked network read
+        stream_.join();
     }
     if (decoder_.joinable()) {
         decoder_.request_stop();

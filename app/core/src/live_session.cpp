@@ -40,6 +40,7 @@ bool Session::enter_live_mode() {
         return false;
     }
     state_ = State::LiveMode;
+    last_keep_alive_ = Clock::now();
     return true;
 }
 
@@ -99,7 +100,7 @@ std::optional<StreamSettings> Session::stored_settings() {
 }
 
 void Session::keep_alive(Clock::time_point now) {
-    if ((state_ == State::Joined || state_ == State::Streaming) && now - last_keep_alive_ >= kKeepAliveInterval) {
+    if (state_ != State::Idle && now - last_keep_alive_ >= kKeepAliveInterval) {
         link_.send(live::keep_alive());
         last_keep_alive_ = now;
     }

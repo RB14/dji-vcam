@@ -1,9 +1,9 @@
 #include "camera_connector.h"
 
 #include <chrono>
-#include <optional>
 
 #include "djivcam/camera_ble.h"
+#include "djivcam/live_session.h"
 
 namespace {
 
@@ -13,9 +13,8 @@ using Stage = CameraConnector::Stage;
 constexpr auto kScanWindow = 20s;
 constexpr auto kApprovalTimeout = 90s;
 constexpr auto kRetryDelay = 3s;
-// After hanging up, the camera only notices ~3 s later (then it advertises again); a live view
-// started before that dies with the old Bluetooth session. Wait for its advertising, at most this.
-constexpr auto kHangUpNoticed = 6s;
+constexpr auto kNetworkScan = 20s;  // the camera answers a scan within seconds
+constexpr auto kTick = 100ms;       // requests and the keep-alive are checked this often
 
 // Sleeps in small steps so stop requests are honoured promptly.
 void sleep_for(std::stop_token stop, std::chrono::milliseconds duration) {
@@ -33,25 +32,64 @@ CameraConnector::~CameraConnector() { stop(); }
 
 bool CameraConnector::bluetoothAvailable() { return djivcam::ble::CameraBle::bluetooth_available(); }
 
-void CameraConnector::start(const QString& identifier, const QString& token, const QString& address) {
+void CameraConnector::start(const QString& identifier, const QString& token, const QString& address, const QString& ssid,
+                            const QString& password) {
     stop();
-    wake_requested_ = false;
-    worker_ = std::jthread([this, identifier, token, address](std::stop_token stop) {
-        run(stop, identifier, token, address);
-    });
+    {
+        std::lock_guard lock(mutex_);
+        pending_ = {};
+        if (!ssid.isEmpty()) {
+            pending_.network = std::pair{ssid, password};
+        }
+    }
+    worker_ = std::jthread([this, identifier, token, address](std::stop_token stop) { run(stop, identifier, token, address); });
+}
+
+void CameraConnector::setNetwork(const QString& ssid, const QString& password) {
+    {
+        std::lock_guard lock(mutex_);
+        pending_.network = std::pair{ssid, password};
+    }
+    requested_.notify_all();
+}
+
+void CameraConnector::rescan() {
+    {
+        std::lock_guard lock(mutex_);
+        pending_.rescan = true;
+    }
+    requested_.notify_all();
+}
+
+void CameraConnector::startStream(const djivcam::live::StreamSettings& settings) {
+    {
+        std::lock_guard lock(mutex_);
+        pending_.stream = settings;
+    }
+    requested_.notify_all();
 }
 
 void CameraConnector::stop() {
     if (worker_.joinable()) {
         worker_.request_stop();
+        requested_.notify_all();
         worker_.join();
     }
     emit stageChanged(Stage::Idle, {});
 }
 
+CameraConnector::Request CameraConnector::take_request(std::stop_token stop, std::chrono::milliseconds wait) {
+    std::unique_lock lock(mutex_);
+    requested_.wait_for(lock, stop, wait, [this] { return pending_.network || pending_.rescan || pending_.stream; });
+    return std::exchange(pending_, {});
+}
+
 void CameraConnector::run(std::stop_token stop, QString identifier, QString token, QString address) {
+    auto log = [](const std::string& message) { qInfo("bluetooth: %s", message.c_str()); };
+    std::optional<std::pair<QString, QString>> network = take_request(stop, 0ms).network;
     while (!stop.stop_requested()) {
-        djivcam::ble::CameraBle camera([](const std::string& message) { qInfo("bluetooth: %s", message.c_str()); });
+        djivcam::ble::CameraBle camera(log);
+        djivcam::live::Session session(camera, log);
 
         emit stageChanged(Stage::Searching, tr("Searching for the camera over Bluetooth (make sure it is on)"));
         std::optional<djivcam::ble::Camera> found;
@@ -81,45 +119,66 @@ void CameraConnector::run(std::stop_token stop, QString identifier, QString toke
             continue;
         }
 
-        emit stageChanged(Stage::WakingWifi, tr("Waking the camera's Wi-Fi"));
-        std::optional<djivcam::ble::WifiCredentials> credentials;
-        while (!stop.stop_requested() && camera.connected() && !(credentials = camera.wake_wifi())) {
-            emit stageChanged(Stage::Failed, tr("The camera did not bring up its Wi-Fi, retrying"));
-            camera.keepalive();
+        emit stageChanged(Stage::LiveMode, tr("Switching the camera to Live Streaming mode"));
+        if (!session.enter_live_mode()) {
+            emit stageChanged(Stage::Failed, tr("The camera did not switch to Live Streaming mode, retrying"));
             sleep_for(stop, kRetryDelay);
+            continue;
         }
-        if (!credentials) {
-            qInfo("bluetooth: link to the camera lost");
-            continue;  // stopped, or the link broke: connect again
-        }
-        // A channel move restarts the camera's access point: only here, before any live view
-        // (moved during one, the camera sent no more video; protocol-notes.md 3.12).
-        if (const int channel = wifi_channel_.exchange(0)) {
-            const auto reply = camera.request(djivcam::duml::kAddrWifi, 0x07, 0x2B,
-                                              {static_cast<std::uint8_t>(channel), 0x00}, 2s);
-            const bool moved = reply && !reply->payload.empty() && reply->payload[0] == 0x00;
-            qInfo("bluetooth: moving the camera's Wi-Fi to channel %d -> %s", channel,
-                  reply ? reply->describe().c_str() : "no reply");
-            if (moved) {
-                emit wifiChannelChanged(channel);
+        const QString mac = QString::fromStdString(session.wifi_mac().value_or(std::string()));
+        bool on_network = false;
+        bool rescan = !network;
+        bool asked = false;  // "choose the network" announced
+        while (!stop.stop_requested() && camera.connected()) {
+            if (rescan) {
+                emit stageChanged(Stage::Scanning, tr("Asking the camera which Wi-Fi networks it hears"));
+                QList<CameraNetwork> heard;
+                for (const auto& item : session.scan(kNetworkScan)) {
+                    heard.append({QString::fromStdString(item.ssid), item.five_ghz});
+                }
+                emit networksFound(heard);
+                rescan = false;
+            }
+            if (network && !on_network) {
+                emit stageChanged(Stage::Joining, tr("The camera is joining %1").arg(network->first));
+                if (!session.join(network->first.toStdString(), network->second.toStdString())) {
+                    emit joinFailed(network->first);
+                    network.reset();
+                    continue;
+                }
+                on_network = true;
+                emit stageChanged(Stage::Joined, tr("The camera is on %1").arg(network->first));
+                emit joined(network->first, mac);
+            } else if (!network && !asked) {
+                emit stageChanged(Stage::NeedNetwork, tr("Choose the Wi-Fi network for the camera"));
+                asked = true;
+            }
+            // Holds the link: the camera stays on the network only while it lives.
+            Request request = take_request(stop, kTick);
+            session.keep_alive();
+            rescan = rescan || request.rescan;
+            if (request.network) {
+                if (on_network) {  // another network (or a rejoin without the push): leave, then join again
+                    session.leave();
+                    on_network = false;
+                    if (!session.enter_live_mode()) {
+                        break;
+                    }
+                }
+                network = request.network;
+                asked = false;
+            }
+            if (request.stream && on_network) {
+                emit streamStarted(session.start_stream(*request.stream));
             }
         }
-
-        // Hang up before the datalink may start (the camera ties its live view to the Bluetooth
-        // session) and until the camera has to be woken again; the datalink starts once the camera
-        // has noticed (it advertises again).
-        qInfo("bluetooth: the camera's Wi-Fi is up: hanging up, as DJI Mimo does");
-        camera.disconnect();
-        const auto hung_up = std::chrono::steady_clock::now();
-        djivcam::ble::CameraBle watcher;
-        const bool noticed = watcher.find_camera(kHangUpNoticed, found->address, stop).has_value();
-        qInfo("bluetooth: the camera %s after %lld ms", noticed ? "noticed the hang-up" : "did not advertise yet",
-              static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - hung_up).count()));
-        wake_requested_ = false;
-        emit stageChanged(Stage::WifiReady, tr("Camera Wi-Fi is up"));
-        emit wifiReady(QString::fromStdString(credentials->ssid), QString::fromStdString(credentials->password));
-        while (!stop.stop_requested() && !wake_requested_) {
-            sleep_for(stop, 200ms);
+        if (stop.stop_requested()) {
+            session.leave();  // Video mode: the camera goes back to its own access point
+            camera.disconnect();
+            return;
         }
+        emit linkLost();
+        emit stageChanged(Stage::Failed, tr("The Bluetooth link to the camera was lost, reconnecting"));
+        sleep_for(stop, kRetryDelay);
     }
 }

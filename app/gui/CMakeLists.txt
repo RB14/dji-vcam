@@ -1,16 +1,33 @@
-find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets OpenGLWidgets SerialPort)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets OpenGLWidgets Network)
 qt_standard_project_setup()
 
 qt_add_executable(dji-vcam WIN32
     main.cpp
-    bridge_link.cpp bridge_link.h
     camera_panel.cpp camera_panel.h
     camera_connector.cpp camera_connector.h
+    go2rtc_server.cpp go2rtc_server.h
     main_window.cpp main_window.h
+    network_dialog.cpp network_dialog.h
     pipeline.cpp pipeline.h
     preview_widget.cpp preview_widget.h
+    rtmp_server.cpp rtmp_server.h
+    secret_store.cpp secret_store.h
+    wifi_info.cpp wifi_info.h
 )
-target_link_libraries(dji-vcam PRIVATE Qt6::Widgets Qt6::OpenGLWidgets Qt6::SerialPort djivcam_core djivcam_ble djivcam_media)
+target_link_libraries(dji-vcam PRIVATE Qt6::Widgets Qt6::OpenGLWidgets Qt6::Network djivcam_core djivcam_ble djivcam_media)
+if(WIN32)
+    target_link_libraries(dji-vcam PRIVATE crypt32 wlanapi)  # DPAPI (secret_store), the Wi-Fi name (wifi_info)
+endif()
+
+# The RTMP server the RTMP feed runs (go2rtc, fetched by scripts/setup-windows-deps.sh) ships next to
+# the app; without it the app works, with the low-latency feed only.
+set(DJIVCAM_GO2RTC_DIR "" CACHE PATH "Folder with the go2rtc program to bundle")
+if(DJIVCAM_GO2RTC_DIR AND EXISTS "${DJIVCAM_GO2RTC_DIR}/go2rtc${CMAKE_EXECUTABLE_SUFFIX}")
+    add_custom_command(TARGET dji-vcam POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DJIVCAM_GO2RTC_DIR}/go2rtc${CMAKE_EXECUTABLE_SUFFIX}"
+                $<TARGET_FILE_DIR:dji-vcam>
+        VERBATIM)
+endif()
 
 # App icon (resources/dji-vcam.svg, rendered by scripts/make-icon.sh) and version info.
 djivcam_add_version_resource(dji-vcam "DJI VCam" ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/dji-vcam.ico")
