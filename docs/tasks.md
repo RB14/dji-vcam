@@ -37,7 +37,8 @@ Phases:
       camera-controls' Live Streaming matrix after the test session
 - [~] 7. Installer (go2rtc + license, firewall rule for RTMP); merge and release 0.2.0 after the test
       session
-- [ ] Camera settings on the RTMP feed, over the Bluetooth link the app holds anyway
+- [x] Camera settings on the RTMP feed, over the Bluetooth link the app holds anyway
+      (CameraConnector carries the settings panel's requests and the camera's pushes)
 
 Test session with the camera (after phase 5):
 - [ ] The whole app flow on the camera: network dialog, join, the camera found by its MAC, both
@@ -46,6 +47,12 @@ Test session with the camera (after phase 5):
 - [ ] Screens time out with our RTMP; both feeds at once: delay, heat (the camera's temperature
       level in the 0x1D/0x02 status push), battery over 30 min vs the access-point mode
 - [ ] Which camera settings work in Live Streaming mode; can it record meanwhile
+- [ ] Settings on the RTMP feed over Bluetooth: do changes apply, does the panel get the camera's
+      status (exposure, white balance, battery: are the status topics pushed over Bluetooth)
+- [ ] Stop only the RTMP push and stay on the network, so switching back to low latency needs no
+      rejoin. `dji-vcam-cli --ble --join-network FILE --live-mode --live-start 1080 URL --hold 90`
+      with: `--support-stop-live` and the stop `--ble-send 08,02,8e,01011a000102`; other pid
+      `0x001A` values; stopping go2rtc during the push. Then check the live view still plays
 - [ ] 5 GHz networks; the network list's flag byte
 - [ ] Power-off, sleep and Bluetooth loss: the session rebuilds itself
 - [ ] The 1080p webcam (new media source: install), in Windows Camera, Chrome and OBS

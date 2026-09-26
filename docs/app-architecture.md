@@ -57,10 +57,10 @@ app/
                instances loaded inside apps read the app's Local section instead. The installer
                registers the camera for all users, for good (MFVirtualCameraLifetime_System).
     linux/     v4l2loopback writer (/dev/videoN), the mechanism OBS's Linux virtual camera uses
-  gui/         Qt Widgets app: camera_connector (the Bluetooth session on its own thread),
-               network_dialog, rtmp_server (the interface) + go2rtc_server, pipeline (the
-               low-latency feed, the RTMP feed or a replay -> decoder -> preview + webcam),
-               camera_panel, main_window
+  gui/         Qt Widgets app: camera_connector (the Bluetooth session on its own thread; it also
+               carries the camera settings on the RTMP feed), network_dialog, rtmp_server (the
+               interface) + go2rtc_server, pipeline (the low-latency feed, the RTMP feed or a
+               replay -> decoder -> preview + webcam), camera_panel, main_window
   cli/         dji-vcam-cli: every step on its own, for experiments and diagnostics
   tests/
 ```
@@ -92,13 +92,15 @@ another server replaces it by implementing the same few methods.
 7. **Camera controls.** Everything Mimo exposes, researched in [camera-controls.md](camera-controls.md):
    `core` camera_protocol and camera_controller, the GUI's Camera settings panel and the CLI's
    `--camera` / `--camera-set`; verified on the camera both ways (2026-09-25). In Live Streaming
-   mode the shooting mode, format and codec are hidden; on the RTMP feed the panel is empty.
+   mode the shooting mode, format and codec are hidden; on the RTMP feed the settings go over the
+   Bluetooth link, as in DJI Mimo during a livestream.
 
 ## Open questions
 
 - Always stream RTMP? The camera's screens only time out during a stream, and both feeds at once
   would switch instantly; the cost (heat, battery, Wi-Fi airtime) is to be measured.
-- Camera settings on the RTMP feed, over the Bluetooth link the app holds anyway.
+- Stopping only the RTMP push, so switching back to the low-latency feed needs no rejoin
+  (docs/protocol-notes.md 3.13).
 - Recording while in Live Streaming mode; 5 GHz networks; which settings the camera accepts in
   this mode (docs/tasks.md, test session).
 - Latency cost of the virtual camera hop (expected +1-2 frames); a thin OBS "direct mode" plugin

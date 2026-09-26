@@ -51,6 +51,12 @@ TEST(LiveStream, StartFollowsMimosLayout) {
     EXPECT_EQ(live::start_stream({Resolution::P720, 4000, "rtmp://h/x"}).payload[4], 0xA0);  // 4000 = 0x0FA0
 }
 
+TEST(LiveStream, StartCanAnnounceStopSupport) {
+    const auto payload = live::start_stream({Resolution::P1080, 6000, "rtmp://h/x", true}).payload;
+    const std::string text(payload.begin(), payload.end());
+    EXPECT_TRUE(text.ends_with(R"("supportStopLive":true})"));
+}
+
 TEST(LiveStream, StartRejectsMissingOrHugeAddresses) {
     EXPECT_THROW(live::start_stream({Resolution::P1080, 6000, ""}), std::invalid_argument);
     EXPECT_THROW(live::start_stream({Resolution::P1080, 6000, "rtmp://h/" + std::string(300, 'x')}), std::invalid_argument);

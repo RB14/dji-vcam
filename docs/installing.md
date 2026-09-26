@@ -83,12 +83,14 @@ the app connect by itself when it starts. **Disconnect** returns the camera to i
 The toolbar's **Feed** choice selects what the app plays:
 
 - **Low latency** (default): the camera's live view, the one DJI Mimo shows, about 0.15 s behind
-  reality, in 1920x1080. The camera settings panel works with it.
+  reality, in 1920x1080.
 - **RTMP**: the camera pushes an RTMP stream to a small RTMP server that comes with the app
   (go2rtc), and the app plays it, about 0.4 s behind (the camera buffers its livestream). *Options →
   RTMP quality* chooses 1080p at 6 Mbit/s or 720p at 4 Mbit/s. Other apps can open the same stream:
   *Options → Stream addresses* shows its addresses, e.g. for an OBS *Media Source*
   (`rtsp://127.0.0.1:8554/dji-vcam`).
+
+The camera settings panel works with both.
 
 Switching from RTMP back to low latency makes the camera leave and rejoin the network (the camera
 only stops its RTMP stream that way), which takes 15 to 20 s.
@@ -120,7 +122,8 @@ and delete that folder. (The installer's uninstaller does all of it by itself.)
 ## Camera settings
 
 The **Camera settings** panel on the right (toolbar: *Camera settings* shows or hides it) works
-like the DJI Mimo app while the low-latency feed plays:
+like the DJI Mimo app, on either feed (on the RTMP feed the settings go over Bluetooth, as in DJI
+Mimo during a livestream):
 
 - **Image**: stabilization (RockSteady, RockSteady+, HorizonSteady, HorizonBalancing), Daily/Sport,
   FOV.
@@ -132,9 +135,8 @@ like the DJI Mimo app while the low-latency feed plays:
 
 While connected, the camera is in its **Live Streaming mode**: its shooting mode, recording format
 and codec do not apply (a change of mode would disconnect it), and recording in this mode is not
-supported yet, so those controls are hidden. On the RTMP feed the panel is empty for now: switch to the low-latency feed to
-change a setting (the camera keeps it). The lists only offer what the camera accepts; if it refuses
-a change, the control snaps back and the status bar says why.
+supported yet, so those controls are hidden. The lists only offer what the camera accepts; if it
+refuses a change, the control snaps back and the status bar says why.
 
 ## Lost video
 

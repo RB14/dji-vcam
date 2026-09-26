@@ -15,8 +15,8 @@ The camera on your Wi-Fi: no ESP32 board any more.
 - New RTMP feed: the camera pushes RTMP to go2rtc, bundled with the app, and the app plays it
   (~0.4 s behind); other apps can open it too (Options → Stream addresses).
 - The DJI VCam webcam is 1920x1080; smaller video is scaled up.
-- While connected, the shooting mode, format and codec controls are hidden (Live Streaming mode);
-  camera settings are changed on the low-latency feed.
+- While connected, the shooting mode, format and codec controls are hidden (Live Streaming mode).
+  The camera settings work on both feeds: on the RTMP feed they go over Bluetooth, as in DJI Mimo.
 - Removed: the ESP32-S3 bridge (firmware, tools) and the camera access point channel option.
 
 ## 0.1.0 (2026-09-25)

@@ -471,6 +471,14 @@ all over Bluetooth, the network password and pairing identifier not reproduced h
 - **Stop** (`02/8E 01 01 1a 00 01 02`) ends the livestream, the join *and* Live Streaming mode.
   Switching to Video mode (`02/E1 01` to `0x08`; sent to `0x01` it gets no answer in this mode)
   also ends the join.
+- **Settings over Bluetooth.** During its livestream Mimo read and set stabilization (`02/8E` pid
+  `0x0008` to `0x01`) over the link, answered `00`: the app's RTMP feed, which has no live view
+  session, changes the camera's settings this way. Whether the camera pushes its status topics
+  over Bluetooth too is to be verified.
+- **Stopping only the push** is unknown so far: the stop above also ends the join, so the app
+  rejoins to go back to the live view alone (15-20 s). To try: the start's `"supportStopLive":true`,
+  other values of pid `0x001A` at `0x08`, the RTMP server closing the connection
+  (`dji-vcam-cli --join-network … --live-start … --support-stop-live --ble-send …`).
 - The camera keeps both screens on while "preparing" (they time out during a running RTMP stream,
   as seen with Mimo); the Video mode's format list is replaced by the livestream's (the Camera
   settings panel's format changes snap back), stabilization changes work.

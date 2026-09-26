@@ -70,6 +70,9 @@ public:
     // Logs the requests and pushes the camera sends on its own (never the replies to ours, which
     // can carry the camera's Wi-Fi password). For experiments.
     void set_log_camera_requests(bool log);
+    // Called with every request and push the camera sends on its own (e.g. its status topics), on
+    // the Bluetooth stack's thread. Set before connect().
+    void set_message_callback(std::function<void(const duml::Frame&)> on_message);
     // Waits for a request or push the camera sends on its own (e.g. its Wi-Fi scan results 0x07/0xAC
     // after 0x07/0xAB), including one received shortly before; nullopt if none within `timeout`.
     std::optional<duml::Frame> wait_for_camera_request(std::uint8_t cmd_set, std::uint8_t cmd_id,

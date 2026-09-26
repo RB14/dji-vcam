@@ -121,8 +121,8 @@ Details and all prerequisites: [docs/building.md](docs/building.md).
 
 What is still missing (the full list: [docs/tasks.md](docs/tasks.md)):
 
-- **Camera settings on the RTMP feed**: today they are changed on the low-latency feed; they could
-  go over the Bluetooth link the app holds anyway.
+- **Stop only the RTMP push**: switching from RTMP back to low latency makes the camera leave and
+  rejoin the network (15-20 s), the only way known so far to end its push.
 - **Always stream RTMP**: the camera's screens only time out while it streams, and both feeds at
   once would switch instantly. To decide once heat and battery are measured.
 - **Without a Wi-Fi network**: let this computer start its own hotspot (Windows Mobile Hotspot) for

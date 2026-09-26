@@ -3,6 +3,7 @@
 // network; on request it also pushes RTMP. It then holds the Bluetooth link with DJI Mimo's
 // keep-alive, since the camera leaves the network when the link ends, and starts over when the link
 // is lost. stop() returns the camera to Video mode, which sends it back to its own access point.
+// On request the link also carries the camera's settings (camera()), for the RTMP feed.
 //
 // It reports each stage, so the UI can say what is happening: searching, waiting for the on-camera
 // pairing approval, joining.
@@ -12,12 +13,20 @@
 #include <QObject>
 #include <QString>
 
+#include <atomic>
 #include <condition_variable>
+#include <deque>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
 
+#include "djivcam/camera_controller.h"
 #include "djivcam/live_stream.h"
+
+namespace djivcam::live {
+class Link;
+}
 
 // A network in the camera's scan list.
 struct CameraNetwork {
@@ -52,6 +61,14 @@ public:
     void startStream(const djivcam::live::StreamSettings& settings);
     void stop();
 
+    // The camera's settings over the Bluetooth link, as DJI Mimo changes them during its livestream:
+    // for the RTMP feed, where the live view's connection that otherwise carries them does not run.
+    // Active while enabled and the camera is on the network.
+    djivcam::camera::CameraController* camera() { return camera_.get(); }
+    void setCameraControl(bool on);
+    // The camera's latest state. Taking it re-arms cameraChanged().
+    djivcam::camera::CameraState takeCameraState();
+
 signals:
     void stageChanged(CameraConnector::Stage stage, const QString& detail);
     // `model`: the model byte of its advertisement (djivcam/camera_model.h).
@@ -64,6 +81,10 @@ signals:
     void streamStarted(bool ok);
     // The Bluetooth link was lost: the camera is going back to its access point; starting over.
     void linkLost();
+    // The camera reported new settings or status (coalesced: call takeCameraState()).
+    void cameraChanged();
+    // A camera setting failed, with the reason.
+    void cameraError(const QString& message);
 
 private:
     struct Request {
@@ -72,12 +93,29 @@ private:
         std::optional<djivcam::live::StreamSettings> stream;
     };
 
+    struct CameraCommand {
+        djivcam::camera::Command command;
+        djivcam::RequestTracker::ReplyCallback on_reply;
+    };
+
     void run(std::stop_token stop, QString identifier, QString token, QString address);
-    // Waits until a request is pending or the time is up; takes it.
+    // Waits until a request or a camera command is pending or the time is up; takes the request.
     Request take_request(std::stop_token stop, std::chrono::milliseconds wait);
+    // Sends the next queued camera command over `camera` (worker thread), one per tick so the
+    // keep-alive keeps its pace.
+    void send_camera_command(djivcam::live::Link& camera);
+    // Answers the queued camera commands with "no reply" (not joined, control off).
+    void fail_camera_commands();
+    void set_joined(bool joined);
 
     std::jthread worker_;
     std::mutex mutex_;
     std::condition_variable_any requested_;
     Request pending_;
+    std::deque<CameraCommand> camera_commands_;  // guarded by mutex_
+    std::atomic<bool> joined_{false};
+    std::atomic<bool> camera_control_{false};
+    std::atomic<bool> subscribe_{false};  // the controller's on_streaming() is due
+    std::atomic<bool> camera_notified_{false};
+    std::unique_ptr<djivcam::camera::CameraController> camera_;
 };

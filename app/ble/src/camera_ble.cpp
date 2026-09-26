@@ -26,6 +26,9 @@ constexpr detail::ShortUuid kNotify = 0xFFF4;
 constexpr detail::ShortUuid kWrite = 0xFFF5;
 
 constexpr std::uint16_t kPairingSeq = 0x8092;
+// Frames kept for request() and wait_for_camera_request(): the link lives for hours, the camera
+// pushes its status topics every few seconds.
+constexpr std::size_t kKeptFrames = 64;
 constexpr auto kWriteSpacing = 20ms;  // back-to-back write-without-response frames get dropped
 constexpr auto kNameWait = 1500ms;     // how long a found camera may still send its name
 
@@ -65,6 +68,7 @@ struct CameraBle::Impl {
     duml::StreamParser parser;
     std::vector<duml::Frame> responses;  // unclaimed responses from the camera
     std::deque<duml::Frame> camera_requests;  // the camera's own latest requests and pushes
+    std::function<void(const duml::Frame&)> on_message;
     bool approved = false;
 
     std::deque<Bytes> outbox;  // frames for the writer thread
@@ -115,16 +119,22 @@ struct CameraBle::Impl {
             frames = parser.feed(bytes);
         }
         for (duml::Frame& frame : frames) {
-            if (frame.is_request()) {
+            if ((frame.flags & 0x80) == 0) {  // the camera's own request or push, not a reply
                 if (log_camera_requests) {
                     say("camera -> " + frame.describe());
                 }
                 {
                     std::lock_guard lock(mutex);
                     camera_requests.push_back(frame);
-                    if (camera_requests.size() > 64) {
+                    if (camera_requests.size() > kKeptFrames) {
                         camera_requests.pop_front();
                     }
+                }
+                if (on_message) {
+                    on_message(frame);
+                }
+                if (!frame.is_request()) {
+                    continue;  // a push: nothing to answer
                 }
                 const bool approval = frame.cmd_set == 0x07 && frame.cmd_id == 0x46;
                 if (approval) {
@@ -138,6 +148,9 @@ struct CameraBle::Impl {
             } else {
                 std::lock_guard lock(mutex);
                 responses.push_back(std::move(frame));
+                if (responses.size() > kKeptFrames) {  // replies nobody waited for (timed out)
+                    responses.erase(responses.begin());
+                }
             }
         }
         changed.notify_all();
@@ -310,6 +323,10 @@ std::optional<WifiCredentials> CameraBle::wake_wifi() {
 void CameraBle::set_answer_requests(bool answer) { impl_->answer_requests = answer; }
 
 void CameraBle::set_log_camera_requests(bool log) { impl_->log_camera_requests = log; }
+
+void CameraBle::set_message_callback(std::function<void(const duml::Frame&)> on_message) {
+    impl_->on_message = std::move(on_message);
+}
 
 std::optional<duml::Frame> CameraBle::wait_for_camera_request(std::uint8_t cmd_set, std::uint8_t cmd_id,
                                                               std::chrono::milliseconds timeout) {

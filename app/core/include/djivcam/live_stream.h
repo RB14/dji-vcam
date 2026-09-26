@@ -35,6 +35,9 @@ struct StreamSettings {
     Resolution resolution = Resolution::P1080;
     std::uint16_t kbps = 6000;
     std::string url;  // rtmp://host:port/path
+    // The start's "supportStopLive" flag; DJI Mimo sends false. Whether true lets the push stop
+    // without ending the join is to be tested (protocol-notes.md 3.13).
+    bool support_stop_live = false;
 
     bool operator==(const StreamSettings&) const = default;
 };

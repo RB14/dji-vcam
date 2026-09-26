@@ -26,6 +26,9 @@
 //   --no-scan          with --join-network: join without asking the camera to scan first
 //   --live-resolution 720|1080 URL  with --join-network: store the livestream resolution by
 //                      starting a livestream to URL and stopping it at once (the preview stays 1080p)
+//   --live-start 720|1080 URL  with --join-network: start the livestream to URL after the join and
+//                      keep it for --hold (e.g. to try stopping only the push, protocol-notes.md 3.13)
+//   --support-stop-live  with --live-start or --live-resolution: announce "supportStopLive":true
 //   --ble-hold         with --ble: keep the Bluetooth link open (the app's behaviour before
 //                      2026-09-25; the camera then sends no video after a short power-off)
 //   --identifier-file  file holding the approved pairing identifier (never printed)
@@ -38,7 +41,8 @@
 //   --no-answer        do not answer the camera's own requests on the datalink (experiment)
 //   --ble-answer       with --ble: answer the camera's own requests over Bluetooth (DJI Mimo does not)
 //   --ble-send R,S,I[,HEX]  with --ble: after waking the camera, send a DUML request over Bluetooth
-//                      (same format as --send) and print the reply; repeatable
+//                      (same format as --send) and print the reply; repeatable. With --join-network
+//                      and --hold: 10 s after the join (or the --live-start), 5 s apart
 //   --send-early       send the --send requests right after the live-view trigger instead, before
 //                      any video (e.g. to try to start the video of a camera that sends none)
 //   --show-messages    print every DUML message the camera sends (status pushes)
@@ -66,6 +70,7 @@
 
 #include "djivcam/camera_controller.h"
 #include "djivcam/camera_model.h"
+#include "djivcam/live_stream.h"
 #include "djivcam/net.h"
 #include "djivcam/session.h"
 #include "djivcam/version.h"
@@ -344,6 +349,9 @@ int main(int argc, char* argv[]) {
     [[maybe_unused]] bool join_scan = true;
     [[maybe_unused]] int live_resolution = 0;
     [[maybe_unused]] std::string live_url;
+    [[maybe_unused]] int live_start = 0;
+    [[maybe_unused]] std::string live_start_url;
+    [[maybe_unused]] bool support_stop_live = false;
     std::string dump_path;
     std::vector<SendSpec> sends;
     std::vector<SendSpec> ble_sends;
@@ -393,6 +401,11 @@ int main(int argc, char* argv[]) {
         } else if (flag == "--live-resolution" && i + 2 < argc) {
             live_resolution = std::stoi(argv[++i]);
             live_url = argv[++i];
+        } else if (flag == "--live-start" && i + 2 < argc) {
+            live_start = std::stoi(argv[++i]);
+            live_start_url = argv[++i];
+        } else if (flag == "--support-stop-live") {
+            support_stop_live = true;
         } else if (flag == "--no-scan") {
             join_scan = false;
         } else if (flag == "--video-after-join") {
@@ -617,6 +630,12 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             camera->set_log_camera_requests(true);  // what the camera says while it joins
+            // DJI Mimo's livestream start (0x08/0x78), with its quality for the resolution.
+            const auto live_settings = [&](int resolution, const std::string& url) {
+                const bool full_hd = resolution == 1080;
+                return djivcam::live::start_stream({full_hd ? djivcam::live::Resolution::P1080 : djivcam::live::Resolution::P720,
+                                                    static_cast<std::uint16_t>(full_hd ? 6000 : 4000), url, support_stop_live});
+            };
             const auto mac = camera->request(djivcam::duml::kAddrWifi, 0x07, 0x0C, {}, 2s);
             say("camera Wi-Fi MAC (to find it on the network): " + (mac ? mac->describe() : std::string("no reply")));
             // DJI Mimo's order (its livestream setup, captured 2026-09-26): no Wi-Fi wake; the Live
@@ -631,21 +650,8 @@ int main(int argc, char* argv[]) {
             }
             if (live_resolution) {  // before the join: the stop also ends the network join
                 // The livestream settings the camera stores come from the start command (0x08/0x78);
-                // a start to a closed port is accepted and stores them. DJI Mimo's layout (captured
-                // 2026-09-26): 01 8a 00 <resolution> <kbit/s u16> fe 01 00 00 00 00 7f 00, then JSON.
-                const bool full_hd = live_resolution == 1080;
-                const std::uint16_t kbps = full_hd ? 6000 : 4000;
-                djivcam::duml::Bytes start = {0x01, 0x8A, 0x00, static_cast<std::uint8_t>(full_hd ? 0x0A : 0x04),
-                                              static_cast<std::uint8_t>(kbps & 0xFF), static_cast<std::uint8_t>(kbps >> 8),
-                                              0xFE, 0x01, 0x00, 0x00, 0x00, 0x00, 0x7F, 0x00};
-                std::string url;
-                for (char c : live_url) {
-                    url += c == '/' ? std::string("\\/") : std::string(1, c);  // escaped as DJI Mimo does
-                }
-                const std::string json = "{\"rtmpAddress\":\"" + url +
-                                         "\",\"watermark\":0,\"codec\":\"\",\"EnhancedRTMP\":false,\"supportStopLive\":false}";
-                start.insert(start.end(), json.begin(), json.end());
-                const auto started = camera->request(0x08, 0x08, 0x78, start, 10s);
+                // a start to a closed port is accepted and stores them.
+                const auto started = camera->request(live_settings(live_resolution, live_url), 10s);
                 say("livestream start (" + std::to_string(live_resolution) + "p, " + live_url + "): " +
                     (started ? started->describe() : std::string("no reply")));
                 std::this_thread::sleep_for(3s);
@@ -689,9 +695,23 @@ int main(int argc, char* argv[]) {
                     say("Video mode (to 08): " + (mode ? mode->describe() : std::string("no reply")));
                 }
             }
+            if (live_start && reply) {  // the push, kept during --hold
+                const auto started = camera->request(live_settings(live_start, live_start_url), 10s);
+                say("livestream start (" + std::to_string(live_start) + "p, " + live_start_url + "): " +
+                    (started ? started->describe() : std::string("no reply")));
+            }
             // DJI Mimo keeps the Bluetooth link during its livestream: 0x00/0x2B 04 00 every 2.5 s.
+            // The --ble-send requests go out in between (e.g. a stop of only the push).
+            auto next_send = steady_clock::now() + 10s;
+            std::size_t sent = 0;
             for (const auto until = steady_clock::now() + std::chrono::seconds(join_hold_seconds); steady_clock::now() < until;) {
                 camera->request(djivcam::duml::kAddrSession, 0x00, 0x2B, {0x04, 0x00}, 100ms);
+                if (sent < ble_sends.size() && steady_clock::now() >= next_send) {
+                    const SendSpec& spec = ble_sends[sent++];
+                    const auto answer = camera->request(spec.receiver, spec.cmd_set, spec.cmd_id, spec.payload, 3s);
+                    say("bluetooth sent " + std::to_string(sent) + " -> " + (answer ? answer->describe() : std::string("no reply")));
+                    next_send = steady_clock::now() + 5s;
+                }
                 std::this_thread::sleep_for(2400ms);
             }
             camera->disconnect();

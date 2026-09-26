@@ -49,7 +49,8 @@ Command start_stream(const StreamSettings& settings) {
                      static_cast<std::uint8_t>(settings.kbps & 0xFF), static_cast<std::uint8_t>(settings.kbps >> 8),
                      0xFE, 0x01, 0x00, 0x00, 0x00, 0x00, 0x7F, 0x00};
     const std::string json = "{\"rtmpAddress\":\"" + escape_json(settings.url) +
-                             "\",\"watermark\":0,\"codec\":\"\",\"EnhancedRTMP\":false,\"supportStopLive\":false}";
+                             "\",\"watermark\":0,\"codec\":\"\",\"EnhancedRTMP\":false,\"supportStopLive\":" +
+                             (settings.support_stop_live ? "true}" : "false}");
     payload.insert(payload.end(), json.begin(), json.end());
     if (settings.url.empty() || payload.size() > kMaxStartPayload) {
         throw std::invalid_argument("the RTMP address is empty or too long");

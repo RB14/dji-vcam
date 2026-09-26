@@ -655,13 +655,18 @@ the settings mean:
 | Record, photo, codec | Hidden: unverified |
 | FOV, exposure, white balance, colour | Shown; to check in the test session (docs/tasks.md) |
 
+On the RTMP feed there is no live view session, so the app sends the same commands over the
+Bluetooth link it holds to keep the camera on the network, as DJI Mimo does during its livestream
+(stabilization, `02/8E` pid `0x0008` to `0x01`, was answered over Bluetooth). Whether the camera
+also pushes its status topics over Bluetooth (exposure, white balance, battery) is to be verified.
+
 ---
 
 ## 4. How to apply a setting safely
 
 1. **Preconditions.**
    - A registered datalink session: `00/81`, then `00/88` about every 1 s; our live-view loop
-     already does this. Mimo's own 1 Hz beat is `00/88 1a 00 00 00 01` (osmosis
+     already does this. (On the RTMP feed: the Bluetooth link in Live Streaming mode, 3.13.) Mimo's own 1 Hz beat is `00/88 1a 00 00 00 01` (osmosis
      `CameraSession.kt:94-98`).
    - Camera not in playback: `cam_status@0` bit 8, or `02/80` bit 30. **Never send `02/0C` or
      `02/10` 2/3 while live view is wanted.**

@@ -112,5 +112,6 @@ private:
     QString camera_mac_;
     std::jthread finder_;  // looks up camera_ip_ from its MAC
     bool rtmp_requested_ = false;  // the camera was asked to push RTMP in this join
+    bool settings_over_bluetooth_ = false;  // the panel controls the camera through connector_
     unsigned stats_seconds_ = 0;   // for a stats line in the log every 10 s
 };

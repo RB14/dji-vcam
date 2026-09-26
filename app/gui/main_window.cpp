@@ -256,6 +256,20 @@ MainWindow::MainWindow(QWidget* parent)
     connect(connector_, &CameraConnector::joinFailed, this, &MainWindow::onJoinFailed);
     connect(connector_, &CameraConnector::joined, this, &MainWindow::onJoined);
     connect(connector_, &CameraConnector::linkLost, this, &MainWindow::onLinkLost);
+    // On the RTMP feed the camera's settings go over the Bluetooth link.
+    connect(connector_, &CameraConnector::cameraChanged, this, [this] {
+        const auto state = connector_->takeCameraState();
+        if (settings_over_bluetooth_) {
+            camera_panel_->showState(state);
+        }
+    });
+    connect(connector_, &CameraConnector::cameraError, this, [this](const QString& message) {
+        if (settings_over_bluetooth_) {
+            qInfo("camera: %s", qPrintable(message));
+            statusBar()->showMessage(tr("Camera: %1").arg(message), 8000);
+            camera_panel_->showState(connector_->takeCameraState());  // snap refused values back
+        }
+    });
     connect(connector_, &CameraConnector::streamStarted, this, [this](bool ok) {
         qInfo("rtmp: the camera %s", ok ? "pushes its RTMP stream" : "refused the RTMP stream");
         if (!ok) {
@@ -646,6 +660,8 @@ void MainWindow::startLowLatency() {
     config.camera_subnet_prefix = camera_ip_.left(camera_ip_.lastIndexOf(QLatin1Char('.')) + 1).toStdString();
     camera_panel_->setController(nullptr);
     camera_panel_->setUnavailable({});
+    settings_over_bluetooth_ = false;
+    connector_->setCameraControl(false);  // the live view's connection carries them
     pipeline_->start(config, static_cast<DecoderPreference>(decoder_choice_->currentData().toInt()));
     camera_panel_->setController(pipeline_->camera());
 }
@@ -667,7 +683,10 @@ void MainWindow::startRtmp() {
         return;
     }
     camera_panel_->setController(nullptr);
-    camera_panel_->setUnavailable(tr("The camera's settings are changed on the low-latency feed for now."));
+    camera_panel_->setUnavailable({});
+    settings_over_bluetooth_ = true;
+    connector_->setCameraControl(true);
+    camera_panel_->setController(connector_->camera());
     if (!rtmp_requested_) {
         const RtmpQuality& quality = rtmp_quality(settings_->value(kRtmpResolutionKey, 1080).toInt());
         const QString url = rtmp_->ingestUrl(QString::fromStdString(*host));
@@ -681,6 +700,8 @@ void MainWindow::startRtmp() {
 
 void MainWindow::stopFeed() {
     camera_panel_->setController(nullptr);
+    settings_over_bluetooth_ = false;
+    connector_->setCameraControl(false);
     pipeline_->stop();
     streaming_ = false;
     format_label_->clear();
