@@ -66,7 +66,8 @@ Test session with the camera (2026-09-26):
       with: `--support-stop-live` and the stop `--ble-send 08,02,8e,01011a000102`; other pid
       `0x001A` values; stopping go2rtc during the push (that makes the camera retry by itself).
       Then check the live view still plays
-- [ ] 5 GHz networks; the network list's flag byte
+- [x] 5 GHz networks (2026-10-02, the camera set to 5 GHz: join ~14 s, both feeds)
+- [ ] The network list's flag byte
 - [x] Camera restart while connected, on each feed (as test 7 below did for 0.1.0): the app finds
       the camera, puts it back on the network and the video returns by itself
 - [ ] Sleep and Bluetooth loss (out of range, Bluetooth off): the session rebuilds itself
@@ -112,6 +113,21 @@ Found in the test session (2026-09-26), to do:
        (protocol-notes.md 3.11)
 
 ## Now
+
+- [ ] **The camera as a drive** (proposed 2026-10-02): the camera's files in Windows Explorer as a
+      drive letter, over your network: browse, copy, play in place, delete (opt-in).
+      Feasibility verified on the camera (protocol-notes.md 3.14): the file list over the datalink
+      in Live Streaming mode (paging without playback mode), HTTP downloads with Range and HEAD,
+      ~20 MB/s on 5 GHz alongside the RTMP stream.
+      - [ ] Core: media list query and parser (`00/26` / `00/27`, paging, both stores), HTTP client
+            (HEAD for files over 4 GB, Range reads), with tests on recorded pages
+      - [ ] The list over the app's own datalink session (the camera takes one client); a session
+            for the list when only the RTMP feed runs
+      - [ ] Drive: read-only WinFsp file system (reads -> HTTP Range, a small read-ahead cache),
+            SD card and internal storage as folders, refreshed on demand; the installer bundles
+            WinFsp (check its FLOSS license exception)
+      - [ ] Then: thumbnails, the `.LRF` proxies, delete (`00/28`, opt-in), progress in the status
+            bar
 
 - [~] **Camera controls** (milestone 7): research in [camera-controls.md](camera-controls.md);
       implemented in the app (Camera settings panel) and the CLI (`--camera`, `--camera-set`),

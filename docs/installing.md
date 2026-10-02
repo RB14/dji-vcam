@@ -16,7 +16,8 @@ browsers) as the **DJI VCam** webcam. It can also take the camera's RTMP stream 
   when it is another one.
 - A **Wi-Fi network the camera and this computer share**: the camera joins it, and the computer is
   on it over Wi-Fi or Ethernet. It must not be a guest network that keeps its devices apart. 2.4 GHz
-  networks work; 5 GHz is not tested yet. Hidden networks work too.
+  and 5 GHz networks both work: the camera uses the band set in its own Wi-Fi settings. Hidden
+  networks work too.
 
 ## Download
 
@@ -191,7 +192,7 @@ status bar counts lost packets (*loss*) and held frames (*held*). The RTMP feed 
 |---|---|
 | Stuck on "Searching for the camera" | Switch the camera on / wake it; move it closer; check that Bluetooth is on. `dji-vcam-cli --ble-scan 10` (in the app folder) lists what the computer hears; the camera shows up as "DJI" |
 | Stuck on "Approve the pairing request" | Look at the camera screen and approve; the request expires after about 90 s and is repeated |
-| "The camera could not join *network*" | Check the password in the dialog; the network must reach the camera (2.4 GHz, near enough) |
+| "The camera could not join *network*" | Check the password in the dialog; the network must reach the camera (near enough, and on the band set in the camera's Wi-Fi settings: a 5 GHz-only network needs the camera on 5 GHz) |
 | "The camera is on *network*, but this computer does not see it there" | The computer must be on the same network, and it must not be a guest network that keeps devices apart (router setting "client/AP isolation") |
 | The camera leaves the network after a while | The Bluetooth link was lost (out of range, Bluetooth turned off): the app reconnects and the camera rejoins by itself |
 | Camera switched off and on | Nothing to do: the app finds it, puts it back on the network and the video returns |

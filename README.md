@@ -22,7 +22,7 @@ its live preview, and can also take the camera's RTMP stream.
 | **DJI Osmo Action 5 Pro**, activated once with DJI Mimo | The camera the app is developed and tested with |
 | **Windows 11** | The webcam uses Windows 11's virtual camera API (Media Foundation `MFCreateVirtualCamera`), which Windows 10 does not have. Linux support is in progress |
 | **Bluetooth LE** on the computer | Pairs the computer with the camera (one approval on the camera screen), switches the camera to its Live Streaming mode and tells it which Wi-Fi network to join. The link stays up while connected: the camera leaves the network when it ends. A desktop without Bluetooth needs a USB Bluetooth adapter (any adapter Windows supports should do; not tested yet) |
-| **A Wi-Fi network the camera and this computer share** | The camera joins it; the computer can be on it over Wi-Fi or Ethernet. Not a guest network that keeps its devices apart. 2.4 GHz (5 GHz is not tested yet) |
+| **A Wi-Fi network the camera and this computer share** | The camera joins it; the computer can be on it over Wi-Fi or Ethernet. Not a guest network that keeps its devices apart. 2.4 or 5 GHz, as set on the camera |
 | A GPU (optional) | Decoding uses the GPU when there is one (D3D11VA), else the CPU |
 
 ### How the camera connects
@@ -131,7 +131,8 @@ What is still missing (the full list: [docs/tasks.md](docs/tasks.md)):
   low-latency feed alone.
 - **Without a Wi-Fi network**: let this computer start its own hotspot (Windows Mobile Hotspot) for
   the camera, e.g. outdoors.
-- **5 GHz networks**: not tested yet.
+- **The camera as a drive**: browse, copy and play the camera's files in Windows Explorer over the
+  network (feasibility verified, docs/tasks.md).
 - **Other DJI cameras**: test the Osmo Action 4 and 6, the Osmo 360 and the Pocket 3; prefer known
   camera models when several DJI devices are around (today the first DJI device heard is used,
   which could be a DJI Mic).

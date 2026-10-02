@@ -103,7 +103,7 @@ another server replaces it by implementing the same few methods.
   instant switching): its cost in heat and battery is to be measured.
 - Stopping only the RTMP push, so switching back to the low-latency feed needs no rejoin
   (docs/protocol-notes.md 3.13).
-- Recording while in Live Streaming mode; 5 GHz networks; which settings the camera accepts in
+- Recording while in Live Streaming mode; which settings the camera accepts in
   this mode (docs/tasks.md, test session).
 - Latency cost of the virtual camera hop (expected +1-2 frames); a thin OBS "direct mode" plugin
   reusing `core/` can remove it if needed.

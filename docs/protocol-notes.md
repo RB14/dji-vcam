@@ -466,6 +466,9 @@ all over Bluetooth, the network password and pairing identifier not reproduced h
   to join, but it never reaches the router; its answer (`01 ff`) came minutes later.
 - **The scan is optional.** In Live Streaming mode the join answers `00 00` after ~10 s without it,
   ~1 s after a scan. Hidden networks join by name (and appear in the list once known).
+- **Both bands.** The camera joins on the band set in its own Wi-Fi settings: 2.4 GHz and 5 GHz both
+  work (5 GHz verified 2026-10-02: join ~14 s, both feeds, the media access of 3.14). A dual-band
+  network with one name is joined on that band.
 - **The Bluetooth link must stay up**, with Mimo's keep-alive: hanging up sends the camera back to
   its access point within seconds. (The opposite of 3.11, which is about the access point.) A
   *running* RTMP push is the exception: it outlived a hang-up by a minute, until its server went
@@ -522,6 +525,41 @@ reads the stored settings back: `00 01 8a 00 <resolution> <kbit/s> 00 01 00 00 0
 **Network list `07/AC`** (pushed after `07/AB`): a 4-byte header (`01 11 00 00`; a short
 follow-up push had `01 11 04 00`), then per network `[length incl. itself] 01 01 <band> <flag> 00
 <name>`. Band: `01` 2.4 GHz, `02` 5 GHz (by the networks' names); the flag's meaning is unknown.
+
+### 3.14 Media files over the network [VERIFIED 2026-10-02]
+
+With the camera on your network in Live Streaming mode (3.13), the media access DJI Mimo and osmosis
+use over the camera's access point works there too (osmosis `MEDIA_PROTOCOL.md` section 1,
+`docs/01-protocol-map.md` section 6). Tested on 5 GHz with `dji-vcam-cli --send` and `curl`.
+
+**File list: `00/26` to `0x01` over the datalink.** The camera takes one datalink client at a time
+(a second handshake gets no answer while the app's live view runs), so it goes over that session.
+Query payload (osmosis): `4a002a10 <counter u32> 0000 <cursor u32> 2d00 0d0100 ff×8 0001 00×11`;
+cursor `1` = newest on the SD card, `0x40000001` = newest on internal storage. The answer comes as
+chunked `00/27` frames: a 10-byte sub-header `4a <04 start | 01 data | 03 end> .. .. <counter u8>
+.. <seq u16 @6>`, then the data; concatenate the data chunks of one counter. A page holds up to 45
+files (~15 KB).
+
+- **Paging works without playback mode**, which the camera refuses in Live Streaming mode
+  (`02/0C 01 01 00 01` answers `e4`): send the trigger `4a040e10 01000000 0000 01000000`, then a
+  query whose cursor is the oldest handle of the previous page (the pages overlap by that file). The
+  last page carries the `0c 01` TLV.
+- **Records** (Action 5 Pro, osmosis' TLV layout around the `19 06` tag `T`): handle `u32 @ T−10`
+  = `0x00040000` + file number × `0x10` on the SD card; size `u32 @ T−14`, which reads **0 for files
+  over 4 GB** (the camera writes long recordings as single files; 13-17 GB seen): take those sizes
+  from HTTP. Media path `1a .. 00 00 00 01 DCIM/DJI_001/<base>` (no extension; the extension is in
+  the `0d` filename field).
+
+**Files: HTTP on the camera's port 80** (lighttpd 1.4.55), answering on your network too:
+`GET`/`HEAD http://<camera>/v2?storage=<0 SD card | 1 internal>&path=DCIM/DJI_001/<name>.MP4`.
+No authentication. HEAD gives `Content-Length`; Range requests answer `206 Partial Content` (from
+the start, the end or the middle); `/` resets the connection; a directory answers `403` (no
+listing).
+
+**Speed** (5 GHz, while the camera pushed RTMP at 6 Mbit/s): ~20 MB/s sustained (395 MB in 20 s),
+the first byte 14-25 ms after the request, also after a seek to 1 GB. Neither the list nor the
+downloads disturbed the RTMP stream or the live view. Enough to play clips straight from the
+camera (docs/tasks.md, "The camera as a drive").
 
 ## 4. Verified A5P video alternative: RTMP push over BLE (Moblin)
 
